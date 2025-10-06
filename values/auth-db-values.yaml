@@ -1,52 +1,49 @@
-global:
-  postgresql:
-    auth:
-      username: "auth_user"
-      password: "auth_pass"
-      database: "auth_db"
-      existingSecret: ""
-      secretKeys:
-        userPasswordKey: "password"
+# 1. Base Configuration (for a unique service)
+fullnameOverride: postgresql-service-a
+auth:
+  # The initial database and user to be created
+  database: auth_db
+  username: auth_user
+  # It's best practice to use Kubernetes Secrets, but for a simple Minikube demo,
+  # you can set the passwords directly (use actual secrets in production!)
+  password: "auth-pass"
+  postgresPassword: "auth-root-pass"
 
-image:
-  registry: docker.io
-  repository: postgres
-  tag: 17.6
-  pullPolicy: IfNotPresent
-
-architecture: standalone
-
+# 2. Persistent Volume (Использование persistent volume)
 persistence:
   enabled: true
-  size: 8Gi
-  storageClass: "standard"
+  # Minikube usually has a default StorageClass, which will handle the volume
+  size: 5Gi
 
-primary:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  extendedConfiguration: |
-    max_connections = 50
-  env:
-    - name: POSTGRES_USER
-      value: "auth_user"
-    - name: POSTGRES_PASSWORD
-      value: "auth_pass"
-    - name: POSTGRES_DB
-      value: "auth_db"
-    - name: POSTGRES_USER_MONITORING
-      value: "auth_monitor"
-    - name: POSTGRES_PASSWORD_MONITORING
-      value: "auth_pass"
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9187"
-    prometheus.io/path: "/metrics"
-  metrics:
-    enabled: true
-    serviceMonitor:
-      enabled: true
+# 3. Max Connections (Конфигурация макс количества соединений)
+# The default is 100. Configure a new limit.
+postgresql:
+  parameters:
+    max_connections: 200 # Set to your desired maximum
+
+# 4. Monitoring User (Создание пользователя для считывания данных мониторингом)
+# Create a dedicated user for the PostgreSQL Exporter (used by Signoz/Prometheus)
+# This user needs to be created after the primary user.
+# Bitnami chart allows this via the `initdbScripts` feature.
+# We'll create a user 'monitor_user' and grant minimal permissions.
+initdbScripts:
+  monitoring-user.sh: |
+    #!/bin/bash
+    set -e
+    # Wait for the database to be ready
+    /opt/bitnami/postgresql/bin/pg_isready -h 127.0.0.1 -p 5432 -t 10
+
+    # Create the monitoring user
+    psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "CREATE USER monitor_user WITH PASSWORD 'your-monitoring-password';"
+
+    # Grant minimal permissions needed for monitoring queries
+    psql -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "GRANT pg_monitor TO monitor_user;"
+
+# 5. PostgreSQL Exporter (for Signoz/Prometheus)
+# Enable the bundled postgres-exporter which Signoz/Prometheus will scrape
+metrics:
+  enabled: true
+  # Pass the monitoring user credentials to the exporter
+  postgresql:
+    username: monitor_user
+    password: "12345678"
