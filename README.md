@@ -57,4 +57,5 @@ kubectl logs -n observability <pod-name>
 kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
 
 3. PostgreSQL
-kubectl create secret generic mariadb-monitoring-secrets --from-literal=mariadb-monitoring-password='monitor_password'
+kubectl create secret generic mariadb-root-password --from-literal=mariadb-root-password='your_root_password_here' --namespace default
+helm upgrade --install auth-db bitnami/mariadb -f values/auth-db-values.yaml

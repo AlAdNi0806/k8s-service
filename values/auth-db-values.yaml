@@ -15,14 +15,15 @@ configuration: |
 # This enforces the "1 DB per 1 service" pattern.
 mariadb:
   databases:
-    - name: my_service_db
-      user: my_service_user
+    - name: auth_db
+      user: auth_user
+      password: auth_pass
 
 # Create a read-only user for monitoring.
 auth:
   # For the monitoring user, we define it via an init script to grant permissions.
   # The Bitnami chart does not provide a built-in "read-only user" option.
-  existingSecret: mariadb-root-password
+  existingSecret: auth_pass
 
 # Enable Prometheus monitoring.
 # This adds a mysqld_exporter sidecar container to the MariaDB pod.
