@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "name": "vkr-gateway",
+  "port": 8080,
+  "cache_ttl": "300s",
+  "timeout": "5s",
+  "endpoints": [
+    {
+      "endpoint": "/auth/register",
+      "method": "POST",
+      "backend": [
+        {
+          "url_pattern": "/register",
+          "host": ["http://auth-service:8080"]
+        }
+      ]
+    },
+    {
+      "endpoint": "/auth/login",
+      "method": "POST",
+      "backend": [
+        {
+          "url_pattern": "/login",
+          "host": ["http://auth-service:8080"]
+        }
+      ]
+    },
+    {
+      "endpoint": "/orders",
+      "method": "POST",
+      "backend": [
+        {
+          "url_pattern": "/orders",
+          "host": ["http://order-service:8081"]
+        }
+      ]
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "backend": [
+        {
+          "url_pattern": "/health",
+          "host": ["http://order-service:8081"]
+        }
+      ]
+    }
+  ]
+}

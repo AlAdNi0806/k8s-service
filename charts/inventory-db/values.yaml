@@ -1,0 +1,42 @@
+# charts/auth-db/values.yaml
+postgresql:
+  auth:
+    username: "order_user"
+    password: "order_pass"
+    database: "order_db"
+    replicationUsername: "monitor_user"
+    replicationPassword: "monitor_pass"
+
+  primary:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: "standard" # Minikube использует "standard" по умолчанию
+
+    # Настройка postgresql.conf
+    configuration: |-
+      max_connections = 100
+      shared_buffers = 128MB
+      effective_cache_size = 512MB
+      maintenance_work_mem = 64MB
+      checkpoint_completion_target = 0.9
+      wal_buffers = 16MB
+      default_statistics_target = 100
+      random_page_cost = 1.1
+      effective_io_concurrency = 200
+      work_mem = 4MB
+      min_wal_size = 1GB
+      max_wal_size = 4GB
+
+    # Дополнительные права для monitor_user
+    extendedConfiguration: |-
+      GRANT pg_monitor TO monitor_user;
+
+  # Отключаем replica, если не нужна
+  architecture: standalone
+
+  # Экспорт метрик (включаем встроенный exporter)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # мы используем SigNoz, а не Prometheus Operator

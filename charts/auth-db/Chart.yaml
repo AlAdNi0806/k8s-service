@@ -1,0 +1,11 @@
+# charts/auth-db/Chart.yaml
+apiVersion: v2
+name: auth-db
+description: PostgreSQL for Auth Service
+type: application
+version: 0.1.0
+appVersion: "16.0"
+dependencies:
+  - name: postgresql
+    version: "16.7.27" # уточните актуальную версию через `helm search repo bitnami/postgresql`
+    repository: "https://charts.bitnami.com/bitnami"

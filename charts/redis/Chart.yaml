@@ -1,0 +1,11 @@
+# charts/redis/Chart.yaml
+apiVersion: v2
+name: redis
+description: Redis for Auth Service (token storage)
+type: application
+version: 0.1.0
+appVersion: "7.2"
+dependencies:
+  - name: redis
+    version: "22.0.7" # уточните через `helm search repo bitnami/redis`
+    repository: "https://charts.bitnami.com/bitnami"

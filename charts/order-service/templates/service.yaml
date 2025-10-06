@@ -1,0 +1,16 @@
+# charts/order-service/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "order-service.fullname" . }}
+  labels:
+    app: {{ include "order-service.name" . }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: {{ include "order-service.name" . }}

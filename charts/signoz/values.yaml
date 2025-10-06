@@ -1,0 +1,11 @@
+otelCollector:
+  enabled: true
+
+frontend:
+  enabled: true
+
+clickhouse:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi

@@ -1,0 +1,54 @@
+image:
+  repository: devopsfaith/krakend
+  tag: 2.5
+  pullPolicy: IfNotPresent
+
+config: |
+  {
+    "version": 3,
+    "name": "vkr-gateway",
+    "port": 8080,
+    "cache_ttl": "300s",
+    "timeout": "3s",
+    "endpoints": [
+      {
+        "endpoint": "/auth/register",
+        "method": "POST",
+        "backend": [{
+          "url_pattern": "/register",
+          "host": ["http://auth-service:8080"]
+        }]
+      },
+      {
+        "endpoint": "/auth/login",
+        "method": "POST",
+        "backend": [{
+          "url_pattern": "/login",
+          "host": ["http://auth-service:8080"]
+        }]
+      },
+      {
+        "endpoint": "/orders",
+        "method": "POST",
+        "backend": [{
+          "url_pattern": "/orders",
+          "host": ["http://order-service:8081"]
+        }],
+        "extra_config": {
+          "github.com/devopsfaith/krakend-jose/validator": {
+            "alg": "HS256",
+            "jwk_url": "http://auth-service:8080/.well-known/jwks.json",
+            "disable_jwk_security": true
+          }
+        }
+      }
+    ]
+  }
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

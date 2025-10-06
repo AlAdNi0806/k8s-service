@@ -1,0 +1,48 @@
+# signoz-values-minikube.yaml
+clickhouse:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 2Gi # уменьшено с 5Gi
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+otelCollector:
+  enabled: true
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+frontend:
+  enabled: true
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+queryService:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# Отключаем необязательные компоненты
+kafka:
+  enabled: false # SigNoz использует внутренний Kafka, но в Minikube лучше отключить
+zookeeper:
+  enabled: false

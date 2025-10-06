@@ -1,0 +1,27 @@
+# charts/redis/values.yaml
+redis:
+  auth:
+    enabled: false # для Minikube можно отключить пароль
+    # Если хотите с паролем:
+    # enabled: true
+    # password: "redis_pass"
+
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: "standard"
+
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  replica:
+    replicaCount: 0 # отключаем реплики для упрощения
+
+  # Отключаем sentinel и cluster mode
+  architecture: standalone

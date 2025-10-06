@@ -1,0 +1,430 @@
+/./cmd/main.go
+
+```go
+// cmd/main.go
+package main
+
+import (
+	"auth-service/internal/config"
+	"auth-service/internal/handler"
+	"auth-service/internal/repository"
+	"auth-service/internal/service"
+	"auth-service/internal/utils"
+	"context"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+)
+
+func newOTelProvider(ctx context.Context, endpoint string) (*sdktrace.TracerProvider, error) {
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("auth-service"),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+	return tp, nil
+}
+
+func main() {
+	cfg := config.Load()
+	utils.InitJWT(cfg.JWTSecret)
+
+	// PostgreSQL
+	pgOpts := pg.Options{
+		Addr:     cfg.DBHost + ":" + cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		Database: cfg.DBName,
+	}
+	db := pg.Connect(&pgOpts)
+	defer db.Close()
+
+	// Redis
+	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer redisClient.Close()
+
+	// Auth Service
+	userRepo := repository.NewUserRepository(db)
+	authService := service.NewAuthService(userRepo, redisClient)
+
+	// OpenTelemetry
+	ctx := context.Background()
+	tp, err := newOTelProvider(ctx, cfg.OtelExporterURL)
+	if err != nil {
+		log.Fatal("Failed to create OTel provider:", err)
+	}
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Fatal("Failed to shutdown OTel:", err)
+		}
+	}()
+
+	// Echo
+	e := echo.New()
+
+	// Middleware
+	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+		Format: `{"time":"${time_rfc3339}", "method":"${method}", "uri":"${uri}", "status":${status}, "latency":"${latency_human}", "ip":"${remote_ip}"}` + "\n",
+	}))
+	e.Use(middleware.Recover())
+
+	// OpenTelemetry instrumentation
+	e.Use(otelecho.Middleware("auth-service"))
+
+	// Routes
+	authHandler := handler.NewAuthHandler(authService)
+	e.POST("/register", authHandler.Register)
+	e.POST("/login", authHandler.Login)
+
+	// Защищённый эндпоинт для теста
+	e.GET("/me", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"message": "Authenticated!"})
+	}, middleware.AuthMiddleware(authService))
+
+	// Запуск
+	addr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
+
+	log.Printf("Auth service starting on %s", addr)
+	log.Fatal(e.Start(addr))
+}
+```
+
+/./internal/config/config.go
+
+```go
+package config 
+
+import "os"
+
+type Config struct {
+	DBHost     string
+    DBPort     string
+    DBUser     string
+    DBPassword string
+    DBName     string
+
+    RedisAddr  string
+
+    JWTSecret  string
+
+    OtelExporterURL string
+}
+
+func Load() *Config {
+    return &Config{
+        DBHost:          getEnv("DB_HOST", "localhost"),
+        DBPort:          getEnv("DB_PORT", "5432"),
+        DBUser:          getEnv("DB_USER", "auth_user"),
+        DBPassword:      getEnv("DB_PASSWORD", "auth_pass"),
+        DBName:          getEnv("DB_NAME", "auth_db"),
+
+        RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+
+        JWTSecret:       getEnv("JWT_SECRET", "super-secret-jwt-key"),
+
+        OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+    }
+}
+
+func getEnv(key, fallback string) string {
+    if value := os.Getenv(key); value != "" {
+        return value
+    }
+    return fallback
+}
+```
+
+/./internal/handler/auth.go
+
+```go
+// internal/handler/auth.go
+package handler
+
+import (
+	"auth-service/internal/service"
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+)
+
+type AuthHandler struct {
+	authService *service.AuthService
+}
+
+func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+	return &AuthHandler{authService: authService}
+}
+
+func (h *AuthHandler) Register(c echo.Context) error {
+	type Request struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	req := new(Request)
+	if err := c.Bind(req); err != nil {
+		return echo.ErrBadRequest
+	}
+
+	if err := h.authService.Register(c.Request().Context(), req.Email, req.Password); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusCreated, map[string]string{"message": "User registered"})
+}
+
+func (h *AuthHandler) Login(c echo.Context) error {
+	type Request struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	req := new(Request)
+	if err := c.Bind(req); err != nil {
+		return echo.ErrBadRequest
+	}
+
+	token, err := h.authService.Login(c.Request().Context(), req.Email, req.Password)
+	if err != nil {
+		return echo.ErrUnauthorized
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"token": token})
+}
+```
+
+/./internal/middleware/auth.go
+
+```go
+// internal/middleware/auth.go
+package middleware
+
+import (
+	"auth-service/internal/service"
+	"strings"
+
+	"github.com/labstack/echo/v4"
+)
+
+func AuthMiddleware(authService *service.AuthService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				return echo.ErrUnauthorized
+			}
+
+			parts := strings.Split(authHeader, " ")
+			if len(parts) != 2 || parts[0] != "Bearer" {
+				return echo.ErrUnauthorized
+			}
+
+			token := parts[1]
+			_, err := authService.ValidateToken(c.Request().Context(), token)
+			if err != nil {
+				return echo.ErrUnauthorized
+			}
+
+			return next(c)
+		}
+	}
+}
+```
+
+/./internal/model/user.go
+
+```go
+// internal/model/user.go
+package model
+
+type User struct {
+	ID       int64  `pg:"id,pk"`
+	Email    string `pg:"email,unique:notnull"`
+	Password string `pg:"password,notnull"`
+}
+```
+
+/./internal/repository/postgres.go
+
+```go
+package repository
+
+import (
+	"auth-service/internal/model"
+	"context"
+
+	"github.com/go-pg/pg/v10"
+)
+
+type UserRepository struct {
+	db *pg.DB
+}
+
+func NewUserRepository(db *pg.DB) *UserRepository {
+	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
+	_, err := r.db.Model(user).Insert()
+	return err
+}
+
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
+	user := &model.User{}
+	err := r.db.Model(user).Where("email = ?", email).Select()
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+```
+
+/./internal/service/auth.go
+
+```go
+// internal/service/auth.go
+package service
+
+import (
+	"auth-service/internal/model"
+	"auth-service/internal/repository"
+	"auth-service/internal/utils"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type AuthService struct {
+	userRepo *repository.UserRepository
+	redis    *redis.Client
+}
+
+func NewAuthService(userRepo *repository.UserRepository, redis *redis.Client) *AuthService {
+	return &AuthService{userRepo: userRepo, redis: redis}
+}
+
+func (s *AuthService) Register(ctx context.Context, email, password string) error {
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	user := &model.User{Email: email, Password: string(hashed)}
+	return s.userRepo.Create(ctx, user)
+}
+
+func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
+	user, err := s.userRepo.FindByEmail(ctx, email)
+	if err != nil {
+		return "", err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", err
+	}
+
+	token, err := utils.GenerateToken(user.ID)
+	if err != nil {
+		return "", err
+	}
+
+	// Генерируем уникальный ключ для хранения в Redis
+	tokenKey := "token:" + generateTokenID()
+	err = s.redis.Set(ctx, tokenKey, user.ID, 24*time.Hour).Err()
+	if err != nil {
+		return "", err
+	}
+
+	// Сохраняем связь токен → ключ (для отзыва)
+	s.redis.Set(ctx, "user_token:"+token, tokenKey, 24*time.Hour)
+
+	return token, nil
+}
+
+func (s *AuthService) ValidateToken(ctx context.Context, token string) (int64, error) {
+	userID, err := utils.ValidateToken(token)
+	if err != nil {
+		return 0, err
+	}
+
+	tokenKey, err := s.redis.Get(ctx, "user_token:"+token).Result()
+	if err != nil {
+		return 0, err // токен не найден → недействителен
+	}
+
+	storedUserID, err := s.redis.Get(ctx, tokenKey).Int64()
+	if err != nil || storedUserID != userID {
+		return 0, err
+	}
+
+	return userID, nil
+}
+
+func generateTokenID() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+```
+
+/./internal/utils/jwt.go
+
+```go
+package utils
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var jwtKey []byte
+
+func InitJWT(secret string) {
+	jwtKey = []byte(secret)
+}
+
+func GenerateToken(userID int64) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
+}
+
+func ValidateToken(tokenString string) (int64, error) {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil || !token.Valid {
+		return 0, err
+	}
+
+	if userID, ok := claims["user_id"].(float64); ok {
+		return int64(userID), nil
+	}
+	return 0, fmt.Errorf("invalid user_id in token")
+}
+```
+
