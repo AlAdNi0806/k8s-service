@@ -1,40 +1,26 @@
-# Use persistent volumes for storage.
-# For Minikube, this uses the default StorageClass
-# which is automatically provisioned.
 persistence:
   enabled: true
   size: 5Gi
 
-# Configure maximum number of connections.
-# This injects a custom configuration file into MariaDB.
 configuration: |
   [mariadb]
   max_connections = 500
 
-# Create a dedicated database and user for a specific service.
-# This enforces the "1 DB per 1 service" pattern.
 mariadb:
   databases:
     - name: auth_db
       user: auth_user
       password: auth_pass
 
-# Create a read-only user for monitoring.
 auth:
-  # For the monitoring user, we define it via an init script to grant permissions.
-  # The Bitnami chart does not provide a built-in "read-only user" option.
   existingSecret: mariadb-root-password
 
-# Enable Prometheus monitoring.
-# This adds a mysqld_exporter sidecar container to the MariaDB pod.
 metrics:
   enabled: true
 
-# Use NodePort service type for accessibility on Minikube.
 service:
   type: NodePort
 
-# Custom initialization script to create the monitoring user and grant read-only access.
 initdbScripts:
   create-monitoring-user.sql: |
     CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
