@@ -30,6 +30,8 @@ SigNoz (можно использовать официальный чарт )
 
 --------------------------------------------------------------------------------
 helm list --all-namespaces
+helm uninstall auth-db --namespace db-auth
+kubectl get pods -w --namespace db-auth -l app.kubernetes.io/instance=auth-db
 
 
 1. kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'

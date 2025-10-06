@@ -1,49 +1,41 @@
-auth:
-  rootPassword: "root_pass"
-  username: "auth_user"
-  password: "auth_pass"
-  database: "auth_db"
-
-image:
-  registry: docker.io
-  repository: bitnami/mariadb
-  tag: 11.3.2-debian-12-r1
-  pullPolicy: IfNotPresent
-
+# Use persistent volumes for storage.
+# For Minikube, this uses the default StorageClass
+# which is automatically provisioned.
 persistence:
   enabled: true
-  size: 8Gi
-  storageClass: "standard"
+  size: 5Gi
 
-resources:
-  requests:
-    cpu: "500m"
-    memory: "512Mi"
-  limits:
-    cpu: "1000m"
-    memory: "1Gi"
+# Configure maximum number of connections.
+# This injects a custom configuration file into MariaDB.
+configuration: |
+  [mariadb]
+  max_connections = 500
 
-architecture: standalone
+# Create a dedicated database and user for a specific service.
+# This enforces the "1 DB per 1 service" pattern.
+mariadb:
+  databases:
+    - name: my_service_db
+      user: my_service_user
 
+# Create a read-only user for monitoring.
+auth:
+  # For the monitoring user, we define it via an init script to grant permissions.
+  # The Bitnami chart does not provide a built-in "read-only user" option.
+  existingSecret: mariadb-monitoring-secrets
+
+# Enable Prometheus monitoring.
+# This adds a mysqld_exporter sidecar container to the MariaDB pod.
 metrics:
   enabled: true
-  exporter:
-    image:
-      tag: 0.15.0-debian-12-r1
 
-primary:
-  config:
-    max_connections: 50
-  extraEnvVars:
-    - name: MARIADB_MONITOR_USER
-      value: "monitor_auth"
-    - name: MARIADB_MONITOR_PASSWORD
-      value: "monitor_pass"
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9104"
-    prometheus.io/path: "/metrics"
-  metrics:
-    enabled: true
-    serviceMonitor:
-      enabled: true
+# Use NodePort service type for accessibility on Minikube.
+service:
+  type: NodePort
+
+# Custom initialization script to create the monitoring user and grant read-only access.
+initdbScripts:
+  create-monitoring-user.sql: |
+    CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
+    GRANT SELECT ON *.* TO 'monitor'@'%';
+    FLUSH PRIVILEGES;
