@@ -1,14 +1,13 @@
-root:
-  password: "root_pass"
-
-db:
-  name: "auth_db"
-  user: "auth_user"
+auth:
+  rootPassword: "root_pass"
+  username: "auth_user"
   password: "auth_pass"
+  database: "auth_db"
 
 image:
-  repository: mariadb
-  tag: 11.3
+  registry: docker.io
+  repository: bitnami/mariadb
+  tag: 11.3.2
   pullPolicy: IfNotPresent
 
 persistence:
@@ -24,20 +23,21 @@ resources:
     cpu: "1000m"
     memory: "1Gi"
 
-config:
-  max_connections: 50
+architecture: standalone
 
-metrics:
-  enabled: true
-  serviceMonitor:
-    enabled: true
+primary:
+  config:
+    max_connections: 50
+  extraEnvVars:
+    - name: MARIADB_MONITOR_USER
+      value: "monitor_auth"
+    - name: MARIADB_MONITOR_PASSWORD
+      value: "monitor_pass"
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9104"
     prometheus.io/path: "/metrics"
-
-extraEnvVars:
-  - name: MARIADB_MONITOR_USER
-    value: "monitor_auth"
-  - name: MARIADB_MONITOR_PASSWORD
-    value: "monitor_pass"
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
