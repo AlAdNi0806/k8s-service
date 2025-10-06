@@ -60,3 +60,7 @@ kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
 kubectl create secret generic mariadb-root-password --from-literal=mariadb-root-password='your_root_password_here' --namespace default
 
 helm upgrade --install auth-db bitnami/mariadb -f values/auth-db-values.yaml
+
+4. Open tellemtry
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update
