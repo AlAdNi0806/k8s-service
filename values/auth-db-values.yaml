@@ -1,43 +1,31 @@
-# Base configuration for the TimescaleDB Helm chart
 fullnameOverride: auth-db
 
 auth:
-  # Initial database and user settings
+  rootPassword: "auth-root-pass"
   database: auth_db
   username: auth_user
   password: "auth-pass"
-  superuserPassword: "auth-root-pass"
-
-image:
-  repository: timescale/timescaledb-ha
-  tag: "pg14.6-ts2.9.1-p1" # example valid TimescaleDB image tag
-  pullPolicy: IfNotPresent
 
 persistence:
   enabled: true
   size: 5Gi
-  storageClass: standard # your Minikube default StorageClass
+  storageClass: "standard" # or your Minikube default
 
-# PostgreSQL parameters, including max connections
-postgresql:
-  parameters:
-    max_connections: 200
+configuration: |
+  [mysqld]
+  max_connections = 200
 
-# Monitoring user creation: config via initdbScripts or separate method required.
-# TimescaleDB Helm chart may differ in handling init scripts.
 initdbScripts:
-  monitoring-user.sh: |
-    #!/bin/bash
-    set -e
-    /usr/local/bin/pg_isready -h 127.0.0.1 -p 5432 -t 10
-    psql -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE USER monitor_user WITH PASSWORD 'your-monitoring-password';"
-    psql -U $POSTGRES_USER -d $POSTGRES_DB -c "GRANT pg_monitor TO monitor_user;"
+  create-monitoring-user.sql: |
+    CREATE USER 'monitor_user'@'%' IDENTIFIED BY 'monitor_pass';
+    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'monitor_user'@'%';
 
-# Enable metrics export according to TimescaleDB Helm chart conventions
 metrics:
   enabled: true
   serviceMonitor:
     enabled: true
-  postgresql:
-    username: monitor_user
-    password: "12345678"
+    additionalLabels:
+      release: prometheus
+
+service:
+  type: ClusterIP

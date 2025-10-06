@@ -51,13 +51,5 @@ kubectl logs -n observability <pod-name>
 kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
 
 3. PostgreSQL
-helm install postgres1 bitnami/postgresql -f values/auth-db-values.yaml --namespace db1 --create-namespace
-helm install postgres2 bitnami/postgresql -f values/order-db-values.yaml --namespace db2 --create-namespace
-helm install postgres3 bitnami/postgresql -f values/inventory-db-values.yaml --namespace db3 --create-namespace
-
-kubectl exec -it -n db1 postgres1-postgresql-0 -- psql -U user1 -d db1 -c "CREATE USER monitoring_user1 WITH PASSWORD 'monitoring_password1'; GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user1;"
-kubectl exec -it -n db2 postgres2-postgresql-0 -- psql -U user2 -d db2 -c "CREATE USER monitoring_user2 WITH PASSWORD 'monitoring_password2'; GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user2;"
-kubectl exec -it -n db3 postgres3-postgresql-0 -- psql -U user3 -d db3 -c "CREATE USER monitoring_user3 WITH PASSWORD 'monitoring_password3'; GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring_user3;"
-
-
-minikube image pull docker.io/bitnami/postgresql:17.6.0-debian-12-r4
+helm repo add timescaledb https://timescale.github.io/timescaledb-kubernetes/charts
+helm repo update
