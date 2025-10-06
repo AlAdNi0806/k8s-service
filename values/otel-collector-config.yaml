@@ -14,7 +14,7 @@ config:
               - targets: ["auth-db.default.svc.cluster.local:9104"]
   exporters:
     otlp:
-      endpoint: "my-release-signoz-otel-collector.platform.svc.cluster.local:4317"
+      endpoint: "my-signoz-otel-collector.observability.svc.cluster.local:4317"
       tls:
         insecure: true
   service:
