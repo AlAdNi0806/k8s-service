@@ -23,7 +23,7 @@ mariadb:
 auth:
   # For the monitoring user, we define it via an init script to grant permissions.
   # The Bitnami chart does not provide a built-in "read-only user" option.
-  existingSecret: auth_pass
+  existingSecret: mariadb-root-password
 
 # Enable Prometheus monitoring.
 # This adds a mysqld_exporter sidecar container to the MariaDB pod.
