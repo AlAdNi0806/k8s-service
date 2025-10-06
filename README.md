@@ -28,6 +28,10 @@ Kafka + ZooKeeper (или KRaft)
 KrakenD
 SigNoz (можно использовать официальный чарт )
 
+--------------------------------------------------------------------------------
+helm list --all-namespaces
+
+
 1. kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'
 
 2. Redis
