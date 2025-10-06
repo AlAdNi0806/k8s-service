@@ -1,31 +1,43 @@
-fullnameOverride: auth-db
+root:
+  password: "root_pass"
 
-auth:
-  rootPassword: "auth-root-pass"
-  database: auth_db
-  username: auth_user
-  password: "auth-pass"
+db:
+  name: "auth_db"
+  user: "auth_user"
+  password: "auth_pass"
+
+image:
+  repository: mariadb
+  tag: 11.3
+  pullPolicy: IfNotPresent
 
 persistence:
   enabled: true
-  size: 5Gi
-  storageClass: "standard" # or your Minikube default
+  size: 8Gi
+  storageClass: "standard"
 
-configuration: |
-  [mysqld]
-  max_connections = 200
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
 
-initdbScripts:
-  create-monitoring-user.sql: |
-    CREATE USER 'monitor_user'@'%' IDENTIFIED BY 'monitor_pass';
-    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'monitor_user'@'%';
+config:
+  max_connections: 50
 
 metrics:
   enabled: true
   serviceMonitor:
     enabled: true
-    additionalLabels:
-      release: prometheus
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9104"
+    prometheus.io/path: "/metrics"
 
-service:
-  type: ClusterIP
+extraEnvVars:
+  - name: MARIADB_MONITOR_USER
+    value: "monitor_auth"
+  - name: MARIADB_MONITOR_PASSWORD
+    value: "monitor_pass"
