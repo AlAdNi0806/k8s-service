@@ -6,7 +6,7 @@ global:
       database: "inventory_db"
       existingSecret: ""
       secretKeys:
-        userPasswordKey: "inventory_pass"
+        userPasswordKey: "password"
 
 image:
   registry: docker.io

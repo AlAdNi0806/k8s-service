@@ -6,7 +6,7 @@ global:
       database: "order_db"
       existingSecret: ""
       secretKeys:
-        userPasswordKey: "order_pass"
+        userPasswordKey: "password"
 
 image:
   registry: docker.io

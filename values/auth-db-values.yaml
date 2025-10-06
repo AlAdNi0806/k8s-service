@@ -6,7 +6,7 @@ global:
       database: "auth_db"
       existingSecret: ""
       secretKeys:
-        userPasswordKey: "auth_pass"
+        userPasswordKey: "password"
 
 image:
   registry: docker.io
