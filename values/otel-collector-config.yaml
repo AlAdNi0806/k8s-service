@@ -1,6 +1,6 @@
-mode: deployment # or daemonset/statefulset based on your need
+mode: deployment
 
-config: |
+config:
   receivers:
     prometheus:
       config:
