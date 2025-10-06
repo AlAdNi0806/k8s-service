@@ -1,5 +1,9 @@
+image:
+  repository: otel/opentelemetry-collector-contrib
+  # You can specify the version/tag if you want, e.g.
+  # tag: "0.59.0"
 mode: deployment
-
+# Your existing config block
 config:
   receivers:
     prometheus:
@@ -8,13 +12,11 @@ config:
           - job_name: "mariadb"
             static_configs:
               - targets: ["auth-db.default.svc.cluster.local:9104"]
-
   exporters:
     otlp:
       endpoint: "my-release-signoz-otel-collector.platform.svc.cluster.local:4317"
       tls:
         insecure: true
-
   service:
     pipelines:
       metrics:
