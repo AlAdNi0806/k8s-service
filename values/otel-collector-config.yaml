@@ -11,7 +11,7 @@ config:
         scrape_configs:
           - job_name: "mariadb"
             static_configs:
-              - targets: ["auth-db.default.svc.cluster.local:9104"]
+              - targets: ["auth-db-mariadb.default.svc.cluster.local:9104"]
   exporters:
     otlp:
       endpoint: "my-signoz-otel-collector.observability.svc.cluster.local:4317"

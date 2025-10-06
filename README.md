@@ -64,3 +64,6 @@ helm upgrade --install auth-db bitnami/mariadb -f values/auth-db-values.yaml
 4. Open tellemtry
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo update
+
+helm install my-otel-collector open-telemetry/opentelemetry-collector -f values/otel-collector-config.yaml -n default --create-namespace
+kubectl logs -n default -l app.kubernetes.io/name=opentelemetry-collector --follow
