@@ -7,15 +7,14 @@ global:
       existingSecret: ""
       secretKeys:
         userPasswordKey: "auth_pass"
-    servicePort: 5432
-
-architecture: standalone
 
 image:
   registry: docker.io
   repository: postgres
   tag: 17.6.0
   pullPolicy: IfNotPresent
+
+architecture: standalone
 
 persistence:
   enabled: true
@@ -32,11 +31,17 @@ primary:
       memory: "1Gi"
   extendedConfiguration: |
     max_connections = 50
-  extraEnvVars:
+  env:
+    - name: POSTGRES_USER
+      value: "auth_user"
+    - name: POSTGRES_PASSWORD
+      value: "auth_pass"
+    - name: POSTGRES_DB
+      value: "auth_db"
     - name: POSTGRES_USER_MONITORING
-      value: "monitor_user"
+      value: "auth_monitor"
     - name: POSTGRES_PASSWORD_MONITORING
-      value: "monitor_pass"
+      value: "auth_pass"
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9187"

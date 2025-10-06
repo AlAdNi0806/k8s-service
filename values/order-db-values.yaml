@@ -7,15 +7,14 @@ global:
       existingSecret: ""
       secretKeys:
         userPasswordKey: "order_pass"
-    servicePort: 5432
-
-architecture: standalone
 
 image:
   registry: docker.io
   repository: postgres
   tag: 17.6.0
   pullPolicy: IfNotPresent
+
+architecture: standalone
 
 persistence:
   enabled: true
@@ -32,7 +31,13 @@ primary:
       memory: "1Gi"
   extendedConfiguration: |
     max_connections = 50
-  extraEnvVars:
+  env:
+    - name: POSTGRES_USER
+      value: "order_user"
+    - name: POSTGRES_PASSWORD
+      value: "order_pass"
+    - name: POSTGRES_DB
+      value: "order_db"
     - name: POSTGRES_USER_MONITORING
       value: "monitor_order"
     - name: POSTGRES_PASSWORD_MONITORING
