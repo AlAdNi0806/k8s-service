@@ -1,0 +1,36 @@
+global:
+  redis:
+    password: "" # No password
+
+architecture: standalone
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m" # 60% of 1 CPU core (adjust as needed)
+    memory: "1Gi" # 60% of 1.5Gi (adjust as needed)
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 15
+
+restartPolicy: Always # Ensures the pod restarts if it crashes

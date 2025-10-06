@@ -28,9 +28,9 @@ primary:
     max_connections = 50
   extraEnvVars:
     - name: POSTGRES_USER_MONITORING
-      value: "monitoring_user1"
+      value: "monitor_order"
     - name: POSTGRES_PASSWORD_MONITORING
-      value: "monitoring_password1"
+      value: "monitor_pass"
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9187"

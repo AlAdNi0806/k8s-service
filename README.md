@@ -39,3 +39,13 @@ kubectl get pods
 kubectl top pod
 kubectl logs <redis-pod-name>
 kubectl exec -it <redis-pod-name> -- redis-cli
+
+3. SigNoz
+helm repo add signoz https://charts.signoz.io
+helm repo update
+signoz-values.yaml
+helm install my-signoz signoz/signoz -f charts/signoz/signoz-values.yaml --namespace observability --create-namespace
+kubectl get pods -n observability
+kubectl top pod -n observability
+kubectl logs -n observability <pod-name>
+kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080

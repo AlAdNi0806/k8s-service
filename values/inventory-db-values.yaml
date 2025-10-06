@@ -1,12 +1,12 @@
 global:
   postgresql:
     auth:
-      username: "order_user"
-      password: "order_pass"
-      database: "order_db"
+      username: "inventory_user"
+      password: "inventory_pass"
+      database: "inventory_db"
       existingSecret: ""
       secretKeys:
-        userPasswordKey: "order_pass"
+        userPasswordKey: "inventory_pass"
     servicePort: 5432
 
 architecture: standalone
@@ -28,9 +28,9 @@ primary:
     max_connections = 50
   extraEnvVars:
     - name: POSTGRES_USER_MONITORING
-      value: "monitoring_user1"
+      value: "monitor_inventory"
     - name: POSTGRES_PASSWORD_MONITORING
-      value: "monitoring_password1"
+      value: "monitoring_pass"
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9187"
