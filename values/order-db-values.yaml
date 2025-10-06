@@ -11,7 +11,7 @@ global:
 image:
   registry: docker.io
   repository: postgres
-  tag: 17.6.0
+  tag: 17.6
   pullPolicy: IfNotPresent
 
 architecture: standalone
