@@ -1,5 +1,5 @@
 # 1. Base Configuration (for a unique service)
-fullnameOverride: postgresql-service-a
+fullnameOverride: auth-db
 auth:
   # The initial database and user to be created
   database: auth_db
