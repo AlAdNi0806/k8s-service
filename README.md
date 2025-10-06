@@ -27,3 +27,15 @@ Redis
 Kafka + ZooKeeper (или KRaft)
 KrakenD
 SigNoz (можно использовать официальный чарт )
+
+1. kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'
+
+2. Redis
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+touch redis-values.yaml
+helm install my-redis bitnami/redis -f charts/redis/redis-values.yaml --namespace default
+kubectl get pods
+kubectl top pod
+kubectl logs <redis-pod-name>
+kubectl exec -it <redis-pod-name> -- redis-cli
