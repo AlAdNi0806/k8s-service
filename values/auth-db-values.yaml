@@ -11,8 +11,10 @@ auth:
 
 image:
   registry: docker.io
-  repository: bitnami/postgresql
-  tag: "17.6"
+  repository: bitnamisecure/postgresql
+  tag: "latest"
+
+global.security.allowInsecureImages: true
 
 # 2. Persistent Volume (Использование persistent volume)
 persistence:
