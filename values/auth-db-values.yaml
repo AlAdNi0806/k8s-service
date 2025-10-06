@@ -9,6 +9,11 @@ auth:
   password: "auth-pass"
   postgresPassword: "auth-root-pass"
 
+image:
+  registry: docker.io
+  repository: bitnami/postgresql
+  tag: "17.6"
+
 # 2. Persistent Volume (Использование persistent volume)
 persistence:
   enabled: true
