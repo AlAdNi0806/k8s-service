@@ -1,15 +1,14 @@
 global:
-  storageClass: "standard"
+  storageClass: "standard" # Minikube's default
 
 frontend:
-  enabled: true
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
-    limits:
       cpu: "500m"
       memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
   livenessProbe:
     enabled: true
     initialDelaySeconds: 30
@@ -22,16 +21,16 @@ frontend:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 5
+  restartPolicy: Always
 
 queryService:
-  enabled: true
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
-    limits:
       cpu: "500m"
       memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
   livenessProbe:
     enabled: true
     initialDelaySeconds: 30
@@ -44,7 +43,54 @@ queryService:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 5
+  restartPolicy: Always
 
-# 🔥 DISABLE OTLP COLLECTOR — YOU DON’T NEED IT
 otelCollector:
-  enabled: false
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
+  restartPolicy: Always
+
+  # 👇 THIS IS THE KEY PART YOU WERE MISSING
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+
+    exporters:
+      clickhouse:
+        endpoint: "http://signoz-clickhouse:8123"
+        username: "default"
+        timeout: 10s
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [clickhouse]
+        metrics:
+          receivers: [otlp]
+          exporters: [clickhouse]
+        logs:
+          receivers: [otlp]
+          exporters: [clickhouse]
