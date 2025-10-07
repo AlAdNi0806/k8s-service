@@ -124,3 +124,6 @@ helm install my-otel-collector open-telemetry/opentelemetry-collector -f values/
 kubectl logs -n default -l app.kubernetes.io/name=opentelemetry-collector --follow
 
 kubectl port-forward --address 0.0.0.0 -n default svc/my-otel-collector-opentelemetry-collector 4318:4318
+
+5. Kafka
+https://saedhasan.medium.com/setting-up-kafka-on-minikube-k8s-using-strimzi-5cac7870d943
