@@ -1,9 +1,5 @@
-global:
-  storageClass: "standard"
-
-# Отключите внешний collector — используем только встроенный
 otelCollector:
-  enabled: true # ← должен быть true (по умолчанию и так true)
+  enabled: true
   config:
     receivers:
       otlp:
@@ -12,18 +8,34 @@ otelCollector:
             endpoint: "0.0.0.0:4317"
           http:
             endpoint: "0.0.0.0:4318"
+
     exporters:
-      clickhouse:
+      # Traces
+      clickhousetraces:
         endpoint: "http://my-signoz-clickhouse:8123"
         username: "default"
+        timeout: 10s
+
+      # Metrics
+      signozclickhousemetrics:
+        endpoint: "http://my-signoz-clickhouse:8123"
+        username: "default"
+        timeout: 10s
+
+      # Logs
+      clickhouselogsexporter:
+        endpoint: "http://my-signoz-clickhouse:8123"
+        username: "default"
+        timeout: 10s
+
     service:
       pipelines:
         traces:
           receivers: [otlp]
-          exporters: [clickhouse]
+          exporters: [clickhousetraces]
         metrics:
           receivers: [otlp]
-          exporters: [clickhouse]
+          exporters: [signozclickhousemetrics]
         logs:
           receivers: [otlp]
-          exporters: [clickhouse]
+          exporters: [clickhouselogsexporter]
