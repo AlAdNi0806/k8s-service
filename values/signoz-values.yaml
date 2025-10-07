@@ -1,5 +1,8 @@
 otelCollector:
   enabled: true
+  env:
+    - name: TENANT_ID
+      value: "default"
   config:
     receivers:
       otlp:
