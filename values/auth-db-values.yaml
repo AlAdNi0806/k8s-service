@@ -24,5 +24,5 @@ service:
 initdbScripts:
   create-monitoring-user.sql: |
     CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
-    GRANT SELECT ON *.* TO 'monitor'@'%';
+    GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
     FLUSH PRIVILEGES;

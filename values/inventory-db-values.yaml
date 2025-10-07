@@ -1,52 +1,28 @@
-global:
-  postgresql:
-    auth:
-      username: "inventory_user"
-      password: "inventory_pass"
-      database: "inventory_db"
-      existingSecret: ""
-      secretKeys:
-        userPasswordKey: "password"
-
-image:
-  registry: docker.io
-  repository: postgres
-  tag: 17.6
-  pullPolicy: IfNotPresent
-
-architecture: standalone
-
 persistence:
   enabled: true
-  size: 8Gi
-  storageClass: "standard"
+  size: 5Gi
 
-primary:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  extendedConfiguration: |
-    max_connections = 50
-  env:
-    - name: POSTGRES_USER
-      value: "inventory_user"
-    - name: POSTGRES_PASSWORD
-      value: "inventory_pass"
-    - name: POSTGRES_DB
-      value: "inventory_db"
-    - name: POSTGRES_USER_MONITORING
-      value: "monitor_inventory"
-    - name: POSTGRES_PASSWORD_MONITORING
-      value: "monitor_pass"
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9187"
-    prometheus.io/path: "/metrics"
-  metrics:
-    enabled: true
-    serviceMonitor:
-      enabled: true
+configuration: |
+  [mariadb]
+  max_connections = 500
+
+mariadb:
+  databases:
+    - name: inventory_db
+      user: inventory_user
+      password: inventory_pass
+
+auth:
+  existingSecret: mariadb-root-password
+
+metrics:
+  enabled: true
+
+service:
+  type: NodePort
+
+initdbScripts:
+  create-monitoring-user.sql: |
+    CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
+    GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
+    FLUSH PRIVILEGES;

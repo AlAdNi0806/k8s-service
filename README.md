@@ -33,6 +33,10 @@ helm list --all-namespaces
 helm uninstall auth-db --namespace db-auth
 kubectl get pods -w --namespace db-auth -l app.kubernetes.io/instance=auth-db
 
+0.
+kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
+kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'
+
 
 1. kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'
 
@@ -66,4 +70,5 @@ helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm
 helm repo update
 
 helm install my-otel-collector open-telemetry/opentelemetry-collector -f values/otel-collector-config.yaml -n default --create-namespace
+
 kubectl logs -n default -l app.kubernetes.io/name=opentelemetry-collector --follow
