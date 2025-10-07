@@ -9,7 +9,8 @@ type Config struct {
 	DBPassword string
 	DBName     string
 
-	RedisAddr string
+	RedisAddr     string
+	RedisPassword string
 
 	JWTSecret string
 
@@ -24,11 +25,12 @@ func Load() *Config {
 		DBPassword: getEnv("DB_PASSWORD", "auth_pass"),
 		DBName:     getEnv("DB_NAME", "auth_db"),
 
-		RedisAddr: getEnv("REDIS_ADDR", "192.168.0.176:6379"),
+		RedisAddr:     getEnv("REDIS_ADDR", "192.168.0.176:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", "2Uve6YlxN7"),
 
 		JWTSecret: getEnv("JWT_SECRET", "super-secret-jwt-key"),
 
-		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://192.168.0.176:4318"),
+		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "192.168.0.176:4317"),
 	}
 }
 

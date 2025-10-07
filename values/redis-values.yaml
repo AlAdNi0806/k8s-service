@@ -1,6 +1,6 @@
 global:
   redis:
-    password: "" # No password
+    password: "redis_pass" # No password
 
 architecture: standalone
 

@@ -1,158 +1,266 @@
-/./cmd/main.go
+/cmd/main.go
 
 ```go
-// cmd/main.go
 package main
 
 import (
 	"auth-service/internal/config"
 	"auth-service/internal/handler"
+	authmw "auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"auth-service/internal/service"
 	"auth-service/internal/utils"
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"time"
 
-	"github.com/go-pg/pg/v10"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/labstack/echo-contrib/prometheus"
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
+	"github.com/labstack/echo/v4/middleware"
+
+	// OpenTelemetry Imports
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+
+	"github.com/redis/go-redis/v9"
 )
 
-func newOTelProvider(ctx context.Context, endpoint string) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
-	if err != nil {
-		return nil, err
+const serviceName = "auth-service"
+const serviceVersion = "1.0.0"
+
+// setupOTelSDK initializes the OpenTelemetry SDK.
+// It returns a function to call to shut down the tracer and an error if one occurs.
+func setupOTelSDK(ctx context.Context) (cleanup func(context.Context) error, err error) {
+	var shutdownFuncs []func(context.Context) error
+
+	// cleanup is a helper function to ensure all shutdown functions are called
+	cleanup = func(ctx context.Context) error {
+		var err error
+		for _, fn := range shutdownFuncs {
+			err = errors.Join(err, fn(ctx))
+		}
+		shutdownFuncs = nil
+		return err
 	}
 
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
+	// handleErr calls cleanup and stores the error.
+	handleErr := func(inErr error) {
+		err = errors.Join(inErr, cleanup(ctx))
+	}
+
+	// --- 1. Resource ---
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("auth-service"),
-		)),
+			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceVersionKey.String(serviceVersion),
+			attribute.String("environment", "development"), // Customize environment
+		),
 	)
-	otel.SetTracerProvider(tp)
-	return tp, nil
+	if err != nil {
+		handleErr(fmt.Errorf("failed to create resource: %w", err))
+		return
+	}
+
+	// --- 2. Tracer Provider/Exporter (using stdout for simplicity) ---
+	// Create stdout exporter to be able to see the traces.
+	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	if err != nil {
+		handleErr(fmt.Errorf("failed to create trace exporter: %w", err))
+		return
+	}
+
+	// Create the TracerProvider.
+	bsp := trace.NewBatchSpanProcessor(traceExporter)
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithResource(res),
+		trace.WithSpanProcessor(bsp),
+	)
+	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
+
+	// Set the global TracerProvider
+	otel.SetTracerProvider(tracerProvider)
+
+	// Note: For full metrics and logs support, you'd add MeterProvider and LoggerProvider here.
+
+	return
 }
 
 func main() {
+	// Setup OpenTelemetry SDK (Traces, Metrics, Logs)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	otelShutdown, err := setupOTelSDK(ctx)
+	if err != nil {
+		log.Fatalf("Error setting up OpenTelemetry SDK: %v", err)
+	}
+	// Call cleanup on exit to ensure all spans/metrics are flushed
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+		if err != nil {
+			log.Fatalf("Error shutting down OpenTelemetry: %v", err)
+		}
+	}()
+	// End of OTel Setup
+
+	// --- Your existing application logic starts here ---
+
 	cfg := config.Load()
 	utils.InitJWT(cfg.JWTSecret)
 
-	// PostgreSQL
-	pgOpts := pg.Options{
-		Addr:     cfg.DBHost + ":" + cfg.DBPort,
-		User:     cfg.DBUser,
-		Password: cfg.DBPassword,
-		Database: cfg.DBName,
+	// Подключение к MariaDB (Consider instrumenting your SQL connection)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+	)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal("Failed to connect to DB:", err)
 	}
-	db := pg.Connect(&pgOpts)
 	defer db.Close()
 
-	// Redis
+	if err := db.Ping(); err != nil {
+		log.Fatal("Failed to ping DB:", err)
+	}
+
+	// Подключение к Redis (Consider instrumenting your Redis client)
 	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer redisClient.Close()
 
-	// Auth Service
+	// Инициализация сервисов
 	userRepo := repository.NewUserRepository(db)
 	authService := service.NewAuthService(userRepo, redisClient)
-
-	// OpenTelemetry
-	ctx := context.Background()
-	tp, err := newOTelProvider(ctx, cfg.OtelExporterURL)
-	if err != nil {
-		log.Fatal("Failed to create OTel provider:", err)
-	}
-	defer func() {
-		if err := tp.Shutdown(ctx); err != nil {
-			log.Fatal("Failed to shutdown OTel:", err)
-		}
-	}()
 
 	// Echo
 	e := echo.New()
 
-	// Middleware
+	// ⭐️ ADD OPENTELEMETRY MIDDLEWARE HERE ⭐️
+	e.Use(otelecho.Middleware(serviceName,
+		// You can optionally skip tracing for certain endpoints like health checks
+		otelecho.WithSkipper(func(c echo.Context) bool {
+			return c.Path() == "/health" || c.Path() == "/metrics"
+		}),
+	))
+
+	// Middleware: логирование (включает IP)
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_rfc3339}", "method":"${method}", "uri":"${uri}", "status":${status}, "latency":"${latency_human}", "ip":"${remote_ip}"}` + "\n",
 	}))
 	e.Use(middleware.Recover())
 
-	// OpenTelemetry instrumentation
-	e.Use(otelecho.Middleware("auth-service"))
+	// Prometheus middleware — ДОБАВЛЕНО
+	p := prometheus.NewPrometheus("echo", nil)
+	p.Use(e) // регистрирует /metrics
 
-	// Routes
+	// Роуты
 	authHandler := handler.NewAuthHandler(authService)
 	e.POST("/register", authHandler.Register)
 	e.POST("/login", authHandler.Login)
 
-	// Защищённый эндпоинт для теста
+	// Защищённый эндпоинт
 	e.GET("/me", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Authenticated!"})
-	}, middleware.AuthMiddleware(authService))
+	}, authmw.AuthMiddleware(authService))
 
-	// Запуск
-	addr := ":8080"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
+	// Health-check (Skipped from tracing via WithSkipper above)
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// Порт
+	port := "8081"
+	if p := os.Getenv("PORT"); p != "" {
+		port = p
 	}
+	addr := ":" + port
 
 	log.Printf("Auth service starting on %s", addr)
-	log.Fatal(e.Start(addr))
+
+	// Use the graceful shutdown context for Echo's Start as well
+	if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+
+	// Wait for an interrupt signal for graceful shutdown (like your initial example)
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
+
+	// Perform graceful shutdown of the Echo server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		log.Fatal("Echo server Shutdown error:", err)
+	}
+	log.Println("Echo server shut down.")
 }
 ```
 
-/./internal/config/config.go
+/internal/config/config.go
 
 ```go
-package config 
+package config
 
 import "os"
 
 type Config struct {
 	DBHost     string
-    DBPort     string
-    DBUser     string
-    DBPassword string
-    DBName     string
+	DBPort     string
+	DBUser     string
+	DBPassword string
+	DBName     string
 
-    RedisAddr  string
+	RedisAddr string
 
-    JWTSecret  string
+	JWTSecret string
 
-    OtelExporterURL string
+	OtelExporterURL string
 }
 
 func Load() *Config {
-    return &Config{
-        DBHost:          getEnv("DB_HOST", "localhost"),
-        DBPort:          getEnv("DB_PORT", "5432"),
-        DBUser:          getEnv("DB_USER", "auth_user"),
-        DBPassword:      getEnv("DB_PASSWORD", "auth_pass"),
-        DBName:          getEnv("DB_NAME", "auth_db"),
+	return &Config{
+		DBHost:     getEnv("DB_HOST", "192.168.0.176"),
+		DBPort:     getEnv("DB_PORT", "3306"),
+		DBUser:     getEnv("DB_USER", "auth_user"),
+		DBPassword: getEnv("DB_PASSWORD", "auth_pass"),
+		DBName:     getEnv("DB_NAME", "auth_db"),
 
-        RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisAddr: getEnv("REDIS_ADDR", "192.168.0.176:6379"),
 
-        JWTSecret:       getEnv("JWT_SECRET", "super-secret-jwt-key"),
+		JWTSecret: getEnv("JWT_SECRET", "super-secret-jwt-key"),
 
-        OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
-    }
+		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://192.168.0.176:4318"),
+	}
 }
 
 func getEnv(key, fallback string) string {
-    if value := os.Getenv(key); value != "" {
-        return value
-    }
-    return fallback
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 ```
 
-/./internal/handler/auth.go
+/internal/handler/auth.go
 
 ```go
 // internal/handler/auth.go
@@ -211,7 +319,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 }
 ```
 
-/./internal/middleware/auth.go
+/internal/middleware/auth.go
 
 ```go
 // internal/middleware/auth.go
@@ -249,62 +357,68 @@ func AuthMiddleware(authService *service.AuthService) echo.MiddlewareFunc {
 }
 ```
 
-/./internal/model/user.go
+/internal/model/user.go
 
 ```go
 // internal/model/user.go
 package model
 
 type User struct {
-	ID       int64  `pg:"id,pk"`
-	Email    string `pg:"email,unique:notnull"`
-	Password string `pg:"password,notnull"`
+	ID       int64
+	Email    string
+	Password string
 }
 ```
 
-/./internal/repository/postgres.go
+/internal/repository/mariadb.go
 
 ```go
+// internal/repository/mariadb.go
 package repository
 
 import (
-	"auth-service/internal/model"
-	"context"
+	"database/sql"
+	"fmt"
 
-	"github.com/go-pg/pg/v10"
+	"auth-service/internal/model"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type UserRepository struct {
-	db *pg.DB
+	db *sql.DB
 }
 
-func NewUserRepository(db *pg.DB) *UserRepository {
+func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
-	_, err := r.db.Model(user).Insert()
+func (r *UserRepository) Create(email, password string) error {
+	_, err := r.db.Exec("INSERT INTO users (email, password) VALUES (?, ?)", email, password)
 	return err
 }
 
-func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
+func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	user := &model.User{}
-	err := r.db.Model(user).Where("email = ?", email).Select()
+	err := r.db.QueryRow("SELECT id, email, password FROM users WHERE email = ?", email).
+		Scan(&user.ID, &user.Email, &user.Password)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
 		return nil, err
 	}
 	return user, nil
 }
 ```
 
-/./internal/service/auth.go
+/internal/service/auth.go
 
 ```go
 // internal/service/auth.go
 package service
 
 import (
-	"auth-service/internal/model"
 	"auth-service/internal/repository"
 	"auth-service/internal/utils"
 	"context"
@@ -325,14 +439,18 @@ func NewAuthService(userRepo *repository.UserRepository, redis *redis.Client) *A
 	return &AuthService{userRepo: userRepo, redis: redis}
 }
 
+// Register — регистрирует пользователя
 func (s *AuthService) Register(ctx context.Context, email, password string) error {
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	user := &model.User{Email: email, Password: string(hashed)}
-	return s.userRepo.Create(ctx, user)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.userRepo.Create(email, string(hashed))
 }
 
+// Login — аутентифицирует и возвращает JWT-токен
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
-	user, err := s.userRepo.FindByEmail(ctx, email)
+	user, err := s.userRepo.FindByEmail(email)
 	if err != nil {
 		return "", err
 	}
@@ -354,11 +472,17 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	}
 
 	// Сохраняем связь токен → ключ (для отзыва)
-	s.redis.Set(ctx, "user_token:"+token, tokenKey, 24*time.Hour)
+	err = s.redis.Set(ctx, "user_token:"+token, tokenKey, 24*time.Hour).Err()
+	if err != nil {
+		// Опционально: удалить tokenKey при ошибке
+		s.redis.Del(ctx, tokenKey)
+		return "", err
+	}
 
 	return token, nil
 }
 
+// ValidateToken — проверяет валидность токена через JWT + Redis
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (int64, error) {
 	userID, err := utils.ValidateToken(token)
 	if err != nil {
@@ -371,7 +495,10 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (int64, e
 	}
 
 	storedUserID, err := s.redis.Get(ctx, tokenKey).Int64()
-	if err != nil || storedUserID != userID {
+	if err != nil {
+		return 0, err
+	}
+	if storedUserID != userID {
 		return 0, err
 	}
 
@@ -385,7 +512,7 @@ func generateTokenID() string {
 }
 ```
 
-/./internal/utils/jwt.go
+/internal/utils/jwt.go
 
 ```go
 package utils
@@ -425,6 +552,133 @@ func ValidateToken(tokenString string) (int64, error) {
 		return int64(userID), nil
 	}
 	return 0, fmt.Errorf("invalid user_id in token")
+}
+```
+
+/internal/utils/otel.go
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/trace"
+)
+
+// setupOTelSDK bootstraps the OpenTelemetry pipeline.
+// If it does not return an error, make sure to call shutdown for proper cleanup.
+func setupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
+	var shutdownFuncs []func(context.Context) error
+	var err error
+
+	// shutdown calls cleanup functions registered via shutdownFuncs.
+	// The errors from the calls are joined.
+	// Each registered cleanup will be invoked once.
+	shutdown := func(ctx context.Context) error {
+		var err error
+		for _, fn := range shutdownFuncs {
+			err = errors.Join(err, fn(ctx))
+		}
+		shutdownFuncs = nil
+		return err
+	}
+
+	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
+	handleErr := func(inErr error) {
+		err = errors.Join(inErr, shutdown(ctx))
+	}
+
+	// Set up propagator.
+	prop := newPropagator()
+	otel.SetTextMapPropagator(prop)
+
+	// Set up trace provider.
+	tracerProvider, err := newTracerProvider()
+	if err != nil {
+		handleErr(err)
+		return shutdown, err
+	}
+	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
+	otel.SetTracerProvider(tracerProvider)
+
+	// Set up meter provider.
+	meterProvider, err := newMeterProvider()
+	if err != nil {
+		handleErr(err)
+		return shutdown, err
+	}
+	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
+	otel.SetMeterProvider(meterProvider)
+
+	// Set up logger provider.
+	loggerProvider, err := newLoggerProvider()
+	if err != nil {
+		handleErr(err)
+		return shutdown, err
+	}
+	shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
+	global.SetLoggerProvider(loggerProvider)
+
+	return shutdown, err
+}
+
+func newPropagator() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+}
+
+func newTracerProvider() (*trace.TracerProvider, error) {
+	traceExporter, err := stdouttrace.New(
+		stdouttrace.WithPrettyPrint())
+	if err != nil {
+		return nil, err
+	}
+
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithBatcher(traceExporter,
+			// Default is 5s. Set to 1s for demonstrative purposes.
+			trace.WithBatchTimeout(time.Second)),
+	)
+	return tracerProvider, nil
+}
+
+func newMeterProvider() (*metric.MeterProvider, error) {
+	metricExporter, err := stdoutmetric.New()
+	if err != nil {
+		return nil, err
+	}
+
+	meterProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter,
+			// Default is 1m. Set to 3s for demonstrative purposes.
+			metric.WithInterval(3*time.Second))),
+	)
+	return meterProvider, nil
+}
+
+func newLoggerProvider() (*log.LoggerProvider, error) {
+	logExporter, err := stdoutlog.New()
+	if err != nil {
+		return nil, err
+	}
+
+	loggerProvider := log.NewLoggerProvider(
+		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+	)
+	return loggerProvider, nil
 }
 ```
 

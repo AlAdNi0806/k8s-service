@@ -31,8 +31,14 @@ SigNoz (можно использовать официальный чарт )
 --------------------------------------------------------------------------------
 helm list --all-namespaces
 kubectl get svc -n default
-helm uninstall auth-db --namespace db-auth
+helm uninstall auth-db --namespace default
 kubectl get pods -w --namespace db-auth -l app.kubernetes.io/instance=auth-db
+
+kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz-otel-collector 4317:4317
+kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz 8080:8080
+kubectl port-forward --address 0.0.0.0 -n default svc/my-redis-master 6379:6379
+kubectl port-forward --address 0.0.0.0 -n default svc/mariadb 3306:3306
+kubectl proxy --address=0.0.0.0 --port=41391 --accept-hosts='^.*$'
 
 0.
 kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
@@ -45,18 +51,19 @@ kubectl proxy --address=0.0.0.0 --port=8001 --accept-hosts='^.*$'
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 touch redis-values.yaml
-helm install my-redis bitnami/redis -f charts/redis/redis-values.yaml --namespace default
+helm install my-redis bitnami/redis -f values/redis-values.yaml --namespace default
 kubectl get pods
 kubectl top pod
 kubectl logs <redis-pod-name>
 kubectl exec -it <redis-pod-name> -- redis-cli
-
 kubectl port-forward --address 0.0.0.0 -n default svc/my-redis 6379:6379
+kubectl get secret --namespace default my-redis -o jsonpath="{.data.redis-password}" | base64 --decode
 
 3. SigNoz
 helm repo add signoz https://charts.signoz.io
 helm repo update
 signoz-values.yaml
+helm uninstall my-signoz
 helm install my-signoz signoz/signoz -f values/signoz-values.yaml --namespace default
 kubectl get pods -n observability
 kubectl top pod -n observability
@@ -64,11 +71,11 @@ kubectl logs -n observability <pod-name>
 kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080
 
 3. PostgreSQL
-kubectl create secret generic mariadb-root-password --from-literal=mariadb-root-password='your_root_password_here' --namespace default
+kubectl create secret generic mariadb-root-password --from-literal=mariadb-root-password='mariadb-root-pass' --namespace default
 
-helm upgrade --install auth-db bitnami/mariadb -f values/maria-db-values.yaml
+helm upgrade --install mariadb bitnami/mariadb -f values/maria-db-values.yaml
 
-kubectl exec -it auth-db-mariadb-0 -- mysql -u root -p
+kubectl exec -it mariadb-0 -- mysql -u root -p
 CREATE DATABASE IF NOT EXISTS auth_db;
 CREATE USER IF NOT EXISTS 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
 GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%';
@@ -80,6 +87,26 @@ GRANT ALL PRIVILEGES ON order_db.* TO 'order_user'@'%';
 CREATE DATABASE IF NOT EXISTS inventory_db;
 CREATE USER IF NOT EXISTS 'inventory_user'@'%' IDENTIFIED BY 'inventory_pass';
 GRANT ALL PRIVILEGES ON inventory_db.* TO 'inventory_user'@'%';
+
+CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE orders (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  quantity INT NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE stock (
+  product_id BIGINT PRIMARY KEY,
+  quantity INT NOT NULL CHECK (quantity >= 0)
+);
 
 FLUSH PRIVILEGES;
 exit;

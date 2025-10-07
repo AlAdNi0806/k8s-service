@@ -3,6 +3,7 @@ package handler
 
 import (
 	"auth-service/internal/service"
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -42,6 +43,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
+		fmt.Println(err)
 		return echo.ErrBadRequest
 	}
 
