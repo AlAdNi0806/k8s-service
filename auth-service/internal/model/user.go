@@ -2,7 +2,7 @@
 package model
 
 type User struct {
-	ID       int64  `pg:"id,pk"`
-	Email    string `pg:"email,unique:notnull"`
-	Password string `pg:"password,notnull"`
+	ID       int64
+	Email    string
+	Password string
 }

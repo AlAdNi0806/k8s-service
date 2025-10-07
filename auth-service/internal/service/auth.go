@@ -2,7 +2,6 @@
 package service
 
 import (
-	"auth-service/internal/model"
 	"auth-service/internal/repository"
 	"auth-service/internal/utils"
 	"context"
@@ -23,14 +22,18 @@ func NewAuthService(userRepo *repository.UserRepository, redis *redis.Client) *A
 	return &AuthService{userRepo: userRepo, redis: redis}
 }
 
+// Register — регистрирует пользователя
 func (s *AuthService) Register(ctx context.Context, email, password string) error {
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	user := &model.User{Email: email, Password: string(hashed)}
-	return s.userRepo.Create(ctx, user)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.userRepo.Create(email, string(hashed))
 }
 
+// Login — аутентифицирует и возвращает JWT-токен
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
-	user, err := s.userRepo.FindByEmail(ctx, email)
+	user, err := s.userRepo.FindByEmail(email)
 	if err != nil {
 		return "", err
 	}
@@ -52,11 +55,17 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	}
 
 	// Сохраняем связь токен → ключ (для отзыва)
-	s.redis.Set(ctx, "user_token:"+token, tokenKey, 24*time.Hour)
+	err = s.redis.Set(ctx, "user_token:"+token, tokenKey, 24*time.Hour).Err()
+	if err != nil {
+		// Опционально: удалить tokenKey при ошибке
+		s.redis.Del(ctx, tokenKey)
+		return "", err
+	}
 
 	return token, nil
 }
 
+// ValidateToken — проверяет валидность токена через JWT + Redis
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (int64, error) {
 	userID, err := utils.ValidateToken(token)
 	if err != nil {
@@ -69,7 +78,10 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (int64, e
 	}
 
 	storedUserID, err := s.redis.Get(ctx, tokenKey).Int64()
-	if err != nil || storedUserID != userID {
+	if err != nil {
+		return 0, err
+	}
+	if storedUserID != userID {
 		return 0, err
 	}
 

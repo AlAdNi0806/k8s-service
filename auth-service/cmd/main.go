@@ -4,110 +4,88 @@ package main
 import (
 	"auth-service/internal/config"
 	"auth-service/internal/handler"
-	authmw "auth-service/internal/middleware" // ← алиас для вашего middleware
+	authmw "auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"auth-service/internal/service"
 	"auth-service/internal/utils"
-	"context"
+	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 
-	"github.com/go-pg/pg/v10"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/labstack/echo-contrib/prometheus"
 	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware" // ← алиас для echo middleware
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/redis/go-redis/v9"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
-
-func newOTelProvider(ctx context.Context, endpoint string) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("auth-service"),
-		)),
-	)
-	otel.SetTracerProvider(tp)
-	return tp, nil
-}
 
 func main() {
 	cfg := config.Load()
 	utils.InitJWT(cfg.JWTSecret)
 
-	// PostgreSQL
-	pgOpts := pg.Options{
-		Addr:     cfg.DBHost + ":" + cfg.DBPort,
-		User:     cfg.DBUser,
-		Password: cfg.DBPassword,
-		Database: cfg.DBName,
+	// Подключение к MariaDB
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+	)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal("Failed to connect to DB:", err)
 	}
-	db := pg.Connect(&pgOpts)
 	defer db.Close()
 
-	// Redis
+	if err := db.Ping(); err != nil {
+		log.Fatal("Failed to ping DB:", err)
+	}
+
+	// Подключение к Redis
 	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer redisClient.Close()
 
-	// Auth Service
+	// Инициализация сервисов
 	userRepo := repository.NewUserRepository(db)
 	authService := service.NewAuthService(userRepo, redisClient)
-
-	// OpenTelemetry
-	ctx := context.Background()
-	tp, err := newOTelProvider(ctx, cfg.OtelExporterURL)
-	if err != nil {
-		log.Fatal("Failed to create OTel provider:", err)
-	}
-	defer func() {
-		if err := tp.Shutdown(ctx); err != nil {
-			log.Fatal("Failed to shutdown OTel:", err)
-		}
-	}()
 
 	// Echo
 	e := echo.New()
 
-	// Middleware
-	e.Use(echomw.LoggerWithConfig(echomw.LoggerConfig{
+	// Middleware: логирование (включает IP)
+	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_rfc3339}", "method":"${method}", "uri":"${uri}", "status":${status}, "latency":"${latency_human}", "ip":"${remote_ip}"}` + "\n",
 	}))
-	e.Use(echomw.Recover())
+	e.Use(middleware.Recover())
 
-	// OpenTelemetry instrumentation
-	e.Use(otelecho.Middleware("auth-service"))
+	// Prometheus middleware — ДОБАВЛЕНО
+	p := prometheus.NewPrometheus("echo", nil)
+	p.Use(e) // регистрирует /metrics
 
-	// Routes
+	// Роуты
 	authHandler := handler.NewAuthHandler(authService)
 	e.POST("/register", authHandler.Register)
 	e.POST("/login", authHandler.Login)
 
-	// Защищённый эндпоинт для теста
+	// Защищённый эндпоинт
 	e.GET("/me", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Authenticated!"})
-	}, authmw.AuthMiddleware(authService)) // ← ваш middleware
+	}, authmw.AuthMiddleware(authService))
 
-	// Health check
+	// Health-check
 	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(200, map[string]string{"status": "ok"})
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	// Запуск
-	addr := ":8081"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
+	// Порт
+	port := "8081"
+	if p := os.Getenv("PORT"); p != "" {
+		port = p
 	}
+	addr := ":" + port
 
 	log.Printf("Auth service starting on %s", addr)
 	log.Fatal(e.Start(addr))

@@ -1,14 +1,15 @@
 global:
-  storageClass: "standard" # Use Minikube's default storage class
+  storageClass: "standard"
 
 frontend:
+  enabled: true
   resources:
     requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
       cpu: "500m"
       memory: "512Mi"
-    limits:
-      cpu: "1000m" # 60% of 1 CPU core
-      memory: "1Gi" # 60% of 1.5Gi
   livenessProbe:
     enabled: true
     initialDelaySeconds: 30
@@ -21,16 +22,16 @@ frontend:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 5
-  restartPolicy: Always
 
 queryService:
+  enabled: true
   resources:
     requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
       cpu: "500m"
       memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
   livenessProbe:
     enabled: true
     initialDelaySeconds: 30
@@ -43,26 +44,7 @@ queryService:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 5
-  restartPolicy: Always
 
+# 🔥 DISABLE OTLP COLLECTOR — YOU DON’T NEED IT
 otelCollector:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  livenessProbe:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  readinessProbe:
-    enabled: true
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  restartPolicy: Always
+  enabled: false

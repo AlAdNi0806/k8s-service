@@ -18,17 +18,17 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
+		DBHost:     getEnv("DB_HOST", "192.168.0.176"),
+		DBPort:     getEnv("DB_PORT", "3306"),
 		DBUser:     getEnv("DB_USER", "auth_user"),
 		DBPassword: getEnv("DB_PASSWORD", "auth_pass"),
 		DBName:     getEnv("DB_NAME", "auth_db"),
 
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisAddr: getEnv("REDIS_ADDR", "192.168.0.176:6379"),
 
 		JWTSecret: getEnv("JWT_SECRET", "super-secret-jwt-key"),
 
-		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://192.168.0.176:4318"),
 	}
 }
 
