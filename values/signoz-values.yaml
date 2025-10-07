@@ -1,73 +1,9 @@
 global:
-  storageClass: "standard" # Minikube's default
+  storageClass: "standard"
 
-frontend:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  livenessProbe:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  readinessProbe:
-    enabled: true
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  restartPolicy: Always
-
-queryService:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  livenessProbe:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  readinessProbe:
-    enabled: true
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  restartPolicy: Always
-
+# Отключите внешний collector — используем только встроенный
 otelCollector:
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1000m"
-      memory: "1Gi"
-  livenessProbe:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  readinessProbe:
-    enabled: true
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 5
-  restartPolicy: Always
-
-  # 👇 THIS IS THE KEY PART YOU WERE MISSING
+  enabled: true # ← должен быть true (по умолчанию и так true)
   config:
     receivers:
       otlp:
@@ -76,13 +12,10 @@ otelCollector:
             endpoint: "0.0.0.0:4317"
           http:
             endpoint: "0.0.0.0:4318"
-
     exporters:
       clickhouse:
-        endpoint: "http://signoz-clickhouse:8123"
+        endpoint: "http://my-signoz-clickhouse:8123"
         username: "default"
-        timeout: 10s
-
     service:
       pipelines:
         traces:

@@ -57,7 +57,7 @@ kubectl port-forward --address 0.0.0.0 -n default svc/my-redis 6379:6379
 helm repo add signoz https://charts.signoz.io
 helm repo update
 signoz-values.yaml
-helm install my-signoz signoz/signoz -f charts/signoz/signoz-values.yaml --namespace observability --create-namespace
+helm install my-signoz signoz/signoz -f values/signoz-values.yaml --namespace default
 kubectl get pods -n observability
 kubectl top pod -n observability
 kubectl logs -n observability <pod-name>
