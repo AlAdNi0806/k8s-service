@@ -24,5 +24,10 @@ service:
 initdbScripts:
   create-monitoring-user.sql: |
     CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
-    GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
+    GRANT ALL PRIVILEGES ON inventory_db.* TO 'inventory_user'@'%' IDENTIFIED BY 'inventory_pass';
+    FLUSH PRIVILEGES;
+  create-database.sql: |
+    CREATE DATABASE IF NOT EXISTS inventory_db;
+    CREATE USER IF NOT EXISTS 'inventory_user'@'%' IDENTIFIED BY 'inventory_pass';
+    GRANT ALL PRIVILEGES ON inventory_db.* TO 'inventory_user'@'%';
     FLUSH PRIVILEGES;

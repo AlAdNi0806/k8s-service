@@ -26,3 +26,8 @@ initdbScripts:
     CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor_password';
     GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
     FLUSH PRIVILEGES;
+  create-database.sql: |
+    CREATE DATABASE IF NOT EXISTS auth_db;
+    CREATE USER IF NOT EXISTS 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
+    GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%';
+    FLUSH PRIVILEGES;

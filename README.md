@@ -65,6 +65,13 @@ kubectl create secret generic mariadb-root-password --from-literal=mariadb-root-
 
 helm upgrade --install auth-db bitnami/mariadb -f values/auth-db-values.yaml
 
+kubectl exec -it auth-db-mariadb-0 -- mysql -u root -p
+CREATE USER 'auth_user'@'%' IDENTIFIED BY 'auth_pass';
+GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%';
+FLUSH PRIVILEGES;
+CREATE DATABASE auth_db;
+exit;
+
 4. Open tellemtry
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo update
