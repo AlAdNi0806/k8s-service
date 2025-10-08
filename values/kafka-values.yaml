@@ -1,35 +1,79 @@
-image:
-  registry: docker.io
-  repository: bitnami/kafka
-  tag: 4.0.0
+# kafka-values.yaml
 
+# Use a single replica for dev
+replicaCount: 1
+
+# Resource limits and requests
 resources:
   requests:
-    cpu: "600m" # 60% of 1 CPU; adjust based on your Minikube setup
-    memory: "600Mi"
+    memory: "2Gi"
+    cpu: "1000m"
   limits:
-    cpu: "1000m" # Max CPU limit
-    memory: "1Gi"
+    memory: "3Gi"
+    cpu: "2000m"
 
+# Configure probes
 livenessProbe:
-  tcpSocket:
-    port: 9092
+  enabled: true
   initialDelaySeconds: 30
   periodSeconds: 10
-  failureThreshold: 6
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
 
 readinessProbe:
-  tcpSocket:
-    port: 9092
-  initialDelaySeconds: 10
+  enabled: true
+  initialDelaySeconds: 15
   periodSeconds: 10
+  timeoutSeconds: 5
   failureThreshold: 3
+  successThreshold: 1
 
 startupProbe:
-  tcpSocket:
-    port: 9092
+  enabled: true
   initialDelaySeconds: 5
-  periodSeconds: 15
-  failureThreshold: 12
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30 # Allow up to 5 minutes for slow startup
 
-podRestartPolicy: Always # Usually default for statefulsets
+# Use StatefulSet (default) → restartPolicy is Always by design
+
+# Disable external access (not needed in Minikube dev)
+service:
+  type: ClusterIP
+
+# Tune Kafka for lower resource usage
+config: |
+  # Reduce log flush frequency
+  log.flush.interval.messages=10000
+  log.flush.interval.ms=1000
+  # Smaller log segment
+  log.segment.bytes=536870912  # 512 MB
+  # Retention
+  log.retention.hours=168
+  # Socket buffer
+  socket.send.buffer.bytes=102400
+  socket.receive.buffer.bytes=102400
+  socket.request.max.bytes=104857600
+
+# Use smaller heap to stay within memory limits
+extraEnvVars:
+  - name: KAFKA_HEAP_OPTS
+    value: "-Xmx1536m -Xms1536m"
+
+# Optional: disable persistence for faster dev (or keep it if you want data durability)
+persistence:
+  enabled: false # Set to true if you want persistent data across restarts
+
+# ZooKeeper (embedded by default in Bitnami chart)
+zookeeper:
+  enabled: true
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  persistence:
+    enabled: false
