@@ -33,6 +33,7 @@ helm list --all-namespaces
 kubectl get svc -n default
 helm uninstall auth-db --namespace default
 kubectl get pods -w --namespace db-auth -l app.kubernetes.io/instance=auth-db
+kubectl get ns // namespaces
 
 kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz-otel-collector 4317:4317
 kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz 8080:8080
@@ -126,4 +127,6 @@ kubectl logs -n default -l app.kubernetes.io/name=opentelemetry-collector --foll
 kubectl port-forward --address 0.0.0.0 -n default svc/my-otel-collector-opentelemetry-collector 4318:4318
 
 5. Kafka
-https://saedhasan.medium.com/setting-up-kafka-on-minikube-k8s-using-strimzi-5cac7870d943
+kubectl apply -f https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.40.0/strimzi-cluster-operator-0.40.0.yaml
+kubectl delete kafka my-cluster -n kafka
+kubectl apply -f values/kafka-values.yaml
