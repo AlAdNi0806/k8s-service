@@ -1,19 +1,16 @@
+# values/kafka-values.yaml
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
   name: my-cluster
   namespace: kafka
 spec:
-  # --- Kafka in KRaft mode (NO ZooKeeper) ---
   kafka:
     version: 4.1.0
     replicas: 1
-
-    # 🔑 Required for KRaft: this node is both broker and controller
     processRoles:
       - broker
       - controller
-
     resources:
       requests:
         memory: 2Gi
@@ -21,8 +18,6 @@ spec:
       limits:
         memory: 3Gi
         cpu: "2000m"
-
-    # Probes (fully supported in Strimzi 0.46+)
     readinessProbe:
       initialDelaySeconds: 15
       periodSeconds: 10
@@ -36,34 +31,24 @@ spec:
       periodSeconds: 10
       timeoutSeconds: 5
       failureThreshold: 30
-
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
-      # 🔑 Controller listener (required for KRaft)
       - name: controller
         port: 9093
         type: internal
         tls: false
         controller: true
-
-    # 🔑 KRaft storage: must use 'jbod' with metadata
     storage:
       type: jbod
       volumes:
         - id: 0
           type: ephemeral
           size: 10Gi
-
-    # 🔑 KRaft quorum config
     config:
-      # Format: <node-id>@<host>:<port>
-      # Since we have 1 node with ID 0, and controller on 9093
       controller.quorum.voters: "0@localhost:9093"
-
-  # --- Entity Operator (for topics/users) ---
   entityOperator:
     topicOperator: {}
     userOperator: {}
