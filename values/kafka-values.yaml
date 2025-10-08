@@ -1,20 +1,14 @@
-# kafka-strimzi.yaml
+# kafka-values.yaml (for Strimzi 0.39–0.45)
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
-metadata:
+metaData:
   name: my-cluster
   namespace: kafka
 spec:
-  # --- Kafka in KRaft mode (no ZooKeeper) ---
+  # --- Kafka (with ZooKeeper) ---
   kafka:
-    version: 4.1.0
+    version: 3.7.0 # Supported in older Strimzi
     replicas: 1
-
-    # 🔑 Required for KRaft: this node acts as both broker and controller
-    processRoles:
-      - broker
-      - controller
-
     resources:
       requests:
         memory: 2Gi
@@ -22,8 +16,7 @@ spec:
       limits:
         memory: 3Gi
         cpu: "2000m"
-
-    # ✅ CORRECT WAY: probes are direct children of 'kafka'
+    # Probes (supported since Strimzi 0.22+)
     readinessProbe:
       initialDelaySeconds: 15
       periodSeconds: 10
@@ -32,40 +25,29 @@ spec:
       initialDelaySeconds: 30
       periodSeconds: 10
       timeoutSeconds: 5
-    startupProbe:
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 30
-
+    # ❌ startupProbe NOT supported in old Strimzi → omit it
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
-      # 🔑 Required for KRaft: controller listener
-      - name: controller
-        port: 9093
-        type: internal
-        tls: false
-        # Only for controller communication
-        controller: true
-
-    # 🔑 KRaft storage: must include 'metadata' volume
     storage:
       type: ephemeral
-      volumes:
-        - id: 0
-          type: ephemeral
-          size: 10Gi # Adjust as needed
 
-    # Optional: tune KRaft settings
-    config:
-      # Ensure controller quorum is local
-      controller.quorum.voters: "0@localhost:9093"
-      # Other Kafka configs...
+  # --- ZooKeeper (required in old Strimzi) ---
+  zookeeper:
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: "200m"
+      limits:
+        memory: 1Gi
+        cpu: "500m"
+    storage:
+      type: ephemeral
 
-  # --- Entity Operator (topics/users) ---
+  # --- Entity Operator ---
   entityOperator:
     topicOperator: {}
     userOperator: {}
