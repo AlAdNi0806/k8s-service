@@ -1,0 +1,54 @@
+# rabbitmq-values.yaml
+
+## Single replica for dev (use replicas: 3+ for prod)
+replicaCount: 1
+
+## Resource limits & requests (target ~60% of 4GB RAM / 2 CPU)
+resources:
+  requests:
+    memory: "1Gi" # ~25% of total Minikube memory
+    cpu: "500m" # 0.5 core
+  limits:
+    memory: "1536Mi" # ~38% of 4GB → leaves room for OS/other pods
+    cpu: "1000m" # 1 core → 50% of 2 CPUs
+
+## Probes: all enabled with safe defaults
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 6
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30 # Wait up to 5 minutes for slow disk/start
+
+## Persistence (disable for dev, enable for data retention)
+persistence:
+  enabled: false
+
+## Admin UI access
+service:
+  type: ClusterIP # Use port-forward to access
+
+## Tune Erlang VM for lower memory
+extraEnvVars:
+  - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+    value: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+  - name: RABBITMQ_MNESIA_DIR
+    value: "/opt/bitnami/rabbitmq/var/lib/rabbitmq/mnesia"
+
+## Disable metrics if not needed (saves resources)
+metrics:
+  enabled: false
