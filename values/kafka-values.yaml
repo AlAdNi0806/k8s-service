@@ -1,79 +1,61 @@
-# kafka-values.yaml
+# kafka-strimzi.yaml
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+meta:
+  name: my-cluster
+  namespace: kafka
+spec:
+  # --- Kafka Brokers ---
+  kafka:
+    version: 3.7.0
+    replicas: 1
+    resources:
+      requests:
+        memory: 2Gi
+        cpu: "1000m"
+      limits:
+        memory: 3Gi # ~60% of 6GB Minikube
+        cpu: "2000m" # 2 cores out of 4
+    readinessProbe:
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 5
+    livenessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    # Startup probe (critical for slow disk)
+    startupProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30 # Wait up to 5 minutes
 
-# Use a single replica for dev
-replicaCount: 1
+    # Listeners
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
 
-# Resource limits and requests
-resources:
-  requests:
-    memory: "2Gi"
-    cpu: "1000m"
-  limits:
-    memory: "3Gi"
-    cpu: "2000m"
+    # Storage
+    storage:
+      type: ephemeral # No persistence (dev only)
 
-# Configure probes
-livenessProbe:
-  enabled: true
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 3
-  successThreshold: 1
+  # --- ZooKeeper (required for Kafka < 4.0) ---
+  zookeeper:
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: "200m"
+      limits:
+        memory: 1Gi
+        cpu: "500m"
+    storage:
+      type: ephemeral
 
-readinessProbe:
-  enabled: true
-  initialDelaySeconds: 15
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 3
-  successThreshold: 1
-
-startupProbe:
-  enabled: true
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 30 # Allow up to 5 minutes for slow startup
-
-# Use StatefulSet (default) → restartPolicy is Always by design
-
-# Disable external access (not needed in Minikube dev)
-service:
-  type: ClusterIP
-
-# Tune Kafka for lower resource usage
-config: |
-  # Reduce log flush frequency
-  log.flush.interval.messages=10000
-  log.flush.interval.ms=1000
-  # Smaller log segment
-  log.segment.bytes=536870912  # 512 MB
-  # Retention
-  log.retention.hours=168
-  # Socket buffer
-  socket.send.buffer.bytes=102400
-  socket.receive.buffer.bytes=102400
-  socket.request.max.bytes=104857600
-
-# Use smaller heap to stay within memory limits
-extraEnvVars:
-  - name: KAFKA_HEAP_OPTS
-    value: "-Xmx1536m -Xms1536m"
-
-# Optional: disable persistence for faster dev (or keep it if you want data durability)
-persistence:
-  enabled: false # Set to true if you want persistent data across restarts
-
-# ZooKeeper (embedded by default in Bitnami chart)
-zookeeper:
-  enabled: true
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "200m"
-    limits:
-      memory: "1Gi"
-      cpu: "500m"
-  persistence:
-    enabled: false
+  # --- Entity Operator (manages topics/users) ---
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
