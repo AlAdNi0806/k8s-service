@@ -1,14 +1,19 @@
-# kafka-values.yaml (for Strimzi 0.39–0.45)
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
   name: my-cluster
   namespace: kafka
 spec:
-  # --- Kafka (with ZooKeeper) ---
+  # --- Kafka in KRaft mode (NO ZooKeeper) ---
   kafka:
-    version: 4.1.0 # Supported in older Strimzi
+    version: 4.1.0
     replicas: 1
+
+    # 🔑 Required for KRaft: this node is both broker and controller
+    processRoles:
+      - broker
+      - controller
+
     resources:
       requests:
         memory: 2Gi
@@ -16,7 +21,8 @@ spec:
       limits:
         memory: 3Gi
         cpu: "2000m"
-    # Probes (supported since Strimzi 0.22+)
+
+    # Probes (fully supported in Strimzi 0.46+)
     readinessProbe:
       initialDelaySeconds: 15
       periodSeconds: 10
@@ -25,29 +31,39 @@ spec:
       initialDelaySeconds: 30
       periodSeconds: 10
       timeoutSeconds: 5
-    # ❌ startupProbe NOT supported in old Strimzi → omit it
+    startupProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30
+
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
-    storage:
-      type: ephemeral
+      # 🔑 Controller listener (required for KRaft)
+      - name: controller
+        port: 9093
+        type: internal
+        tls: false
+        controller: true
 
-  # --- ZooKeeper (required in old Strimzi) ---
-  zookeeper:
-    replicas: 1
-    resources:
-      requests:
-        memory: 512Mi
-        cpu: "200m"
-      limits:
-        memory: 1Gi
-        cpu: "500m"
+    # 🔑 KRaft storage: must use 'jbod' with metadata
     storage:
-      type: ephemeral
+      type: jbod
+      volumes:
+        - id: 0
+          type: ephemeral
+          size: 10Gi
 
-  # --- Entity Operator ---
+    # 🔑 KRaft quorum config
+    config:
+      # Format: <node-id>@<host>:<port>
+      # Since we have 1 node with ID 0, and controller on 9093
+      controller.quorum.voters: "0@localhost:9093"
+
+  # --- Entity Operator (for topics/users) ---
   entityOperator:
     topicOperator: {}
     userOperator: {}
