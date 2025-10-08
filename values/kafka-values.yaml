@@ -2,11 +2,10 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
   name: my-kafka-cluster
-  namespace: kafka
 spec:
   kafka:
-    version: 3.7.0 # or your desired Kafka version
-    replicas: 1
+    version: 3.7.0
+    replicas: 3
     listeners:
       - name: plain
         port: 9092
@@ -14,14 +13,21 @@ spec:
         tls: false
       - name: external
         port: 9094
-        type: nodeport # or loadbalancer if your minikube driver supports it
+        type: nodeport
         tls: false
-    storage:
-      type: ephemeral # or persistent-claim with appropriate PVC configuration
-  zookeeper:
-    replicas: 1
     storage:
       type: ephemeral
   entityOperator:
     topicOperator: {}
     userOperator: {}
+  # This example uses KRaft mode.
+  # Ensure your Strimzi Operator version supports it (0.40.0+).
+  # See: https://strimzi.io/docs/operators/latest/full/configuring.html#ref-kafka-kraft-mode-str
+  kafkaNodePools:
+    - name: default
+      replicas: 3
+      roles:
+        - controller
+        - broker
+      storage:
+        type: ephemeral

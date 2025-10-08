@@ -137,3 +137,6 @@ kubectl apply -f https://github.com/strimzi/strimzi-kafka-operator/releases/down
 kubectl delete ns kafka
 kubectl create ns kafka
 kubectl apply -f https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.46.0/strimzi-cluster-operator-0.46.0.yaml
+
+helm install strimzi-operator strimzi/strimzi-kafka-operator -n kafka --create-namespace
+kubectl apply -f kafka-cluster.yaml -n kafka
