@@ -1,40 +1,30 @@
-apiVersion: kafka.strimzi.io/v1beta2
-kind: Kafka
-metadata:
-  name: my-cluster
-spec:
-  kafka:
-    version: 3.7.0
-    replicas: 1 # you can increase it for more broker replica
-    listeners:
-      - name: plain
-        port: 9092
-        type: internal
-        tls: false
-      - name: tls
-        port: 9093
-        type: internal
-        tls: true
-    config:
-      offsets.topic.replication.factor: 1
-      transaction.state.log.replication.factor: 1
-      transaction.state.log.min.isr: 1
-      default.replication.factor: 1
-      min.insync.replicas: 1
-      inter.broker.protocol.version: "3.7"
-    storage:
-      type: jbod
-      volumes:
-        - id: 0
-          type: persistent-claim
-          size: 100Gi
-          deleteClaim: false
-  zookeeper:
-    replicas: 1 # you can increase it for more ZK replica
-    storage:
-      type: persistent-claim
-      size: 100Gi
-      deleteClaim: false
-  entityOperator:
-    topicOperator: {}
-    userOperator: {}
+resources:
+  requests:
+    cpu: "600m" # 60% of 1 CPU; adjust based on your Minikube setup
+    memory: "600Mi"
+  limits:
+    cpu: "1000m" # Max CPU limit
+    memory: "1Gi"
+
+livenessProbe:
+  tcpSocket:
+    port: 9092
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 6
+
+readinessProbe:
+  tcpSocket:
+    port: 9092
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+startupProbe:
+  tcpSocket:
+    port: 9092
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  failureThreshold: 12
+
+podRestartPolicy: Always # Usually default for statefulsets
