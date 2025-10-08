@@ -1,13 +1,27 @@
 apiVersion: kafka.strimzi.io/v1beta2
-kind: KafkaNodePool
+kind: Kafka
 metadata:
-  name: my-kafka-cluster-nodes
-  labels:
-    strimzi.io/cluster: my-kafka-cluster
+  name: my-kafka-cluster
+  annotations:
+    strimzi.io/node-pools: "enabled" # Enables Node Pool support
+    strimzi.io/kraft: "enabled" # Enables KRaft mode (requires Node Pools)
 spec:
-  replicas: 3
-  roles:
-    - broker
-    - controller
-  storage:
-    type: ephemeral
+  kafka:
+    version: 4.1.0
+    # The 'replicas' and 'storage' fields are now deprecated and
+    # should be removed when using KafkaNodePools.
+    # replicas: 3
+    # storage:
+    #   type: ephemeral
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: external
+        port: 9094
+        type: nodeport
+        tls: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
