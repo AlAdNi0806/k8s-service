@@ -1,7 +1,7 @@
 # kafka-values.yaml (for Strimzi 0.39–0.45)
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
-metaData:
+metadata:
   name: my-cluster
   namespace: kafka
 spec:
