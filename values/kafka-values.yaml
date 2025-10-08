@@ -1,61 +1,51 @@
 # kafka-strimzi.yaml
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
-metadata: # ← CORRECT: "metadata", not "meta"
+metadata:
   name: my-cluster
   namespace: kafka
 spec:
-  # --- Kafka Brokers ---
+  # --- Kafka in KRaft mode (no ZooKeeper) ---
   kafka:
-    version: 3.7.0
+    version: 4.1.0 # Must be 4.0.0 or 4.1.0
     replicas: 1
     resources:
       requests:
         memory: 2Gi
         cpu: "1000m"
       limits:
-        memory: 3Gi # ~60% of 6GB Minikube
-        cpu: "2000m" # 2 cores out of 4
-    readinessProbe:
-      initialDelaySeconds: 15
-      periodSeconds: 10
-      timeoutSeconds: 5
-    livenessProbe:
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      timeoutSeconds: 5
-    # Startup probe (critical for slow disk)
-    startupProbe:
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 30 # Wait up to 5 minutes
+        memory: 3Gi
+        cpu: "2000m"
+    # Probes go inside 'template'
+    template:
+      pod:
+        containers:
+          - name: kafka
+            readinessProbe:
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              timeoutSeconds: 5
+            livenessProbe:
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+            # ✅ startupProbe is supported in newer Strimzi
+            startupProbe:
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 30
 
-    # Listeners
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
 
-    # Storage
-    storage:
-      type: ephemeral # No persistence (dev only)
-
-  # --- ZooKeeper (required for Kafka < 4.0) ---
-  zookeeper:
-    replicas: 1
-    resources:
-      requests:
-        memory: 512Mi
-        cpu: "200m"
-      limits:
-        memory: 1Gi
-        cpu: "500m"
     storage:
       type: ephemeral
 
-  # --- Entity Operator (manages topics/users) ---
+  # --- KRaft requires 'processRoles' and 'controller' config ---
   entityOperator:
     topicOperator: {}
     userOperator: {}
