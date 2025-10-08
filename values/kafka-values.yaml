@@ -23,11 +23,3 @@ spec:
   # This example uses KRaft mode.
   # Ensure your Strimzi Operator version supports it (0.40.0+).
   # See: https://strimzi.io/docs/operators/latest/full/configuring.html#ref-kafka-kraft-mode-str
-  kafkaNodePools:
-    - name: default
-      replicas: 3
-      roles:
-        - controller
-        - broker
-      storage:
-        type: ephemeral
