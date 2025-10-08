@@ -7,8 +7,14 @@ metadata:
 spec:
   # --- Kafka in KRaft mode (no ZooKeeper) ---
   kafka:
-    version: 4.1.0 # Must be 4.0.0 or 4.1.0
+    version: 4.1.0
     replicas: 1
+
+    # 🔑 Required for KRaft: this node acts as both broker and controller
+    processRoles:
+      - broker
+      - controller
+
     resources:
       requests:
         memory: 2Gi
@@ -16,36 +22,50 @@ spec:
       limits:
         memory: 3Gi
         cpu: "2000m"
-    # Probes go inside 'template'
-    template:
-      pod:
-        containers:
-          - name: kafka
-            readinessProbe:
-              initialDelaySeconds: 15
-              periodSeconds: 10
-              timeoutSeconds: 5
-            livenessProbe:
-              initialDelaySeconds: 30
-              periodSeconds: 10
-              timeoutSeconds: 5
-            # ✅ startupProbe is supported in newer Strimzi
-            startupProbe:
-              initialDelaySeconds: 10
-              periodSeconds: 10
-              timeoutSeconds: 5
-              failureThreshold: 30
+
+    # ✅ CORRECT WAY: probes are direct children of 'kafka'
+    readinessProbe:
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 5
+    livenessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    startupProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30
 
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
+      # 🔑 Required for KRaft: controller listener
+      - name: controller
+        port: 9093
+        type: internal
+        tls: false
+        # Only for controller communication
+        controller: true
 
+    # 🔑 KRaft storage: must include 'metadata' volume
     storage:
       type: ephemeral
+      volumes:
+        - id: 0
+          type: ephemeral
+          size: 10Gi # Adjust as needed
 
-  # --- KRaft requires 'processRoles' and 'controller' config ---
+    # Optional: tune KRaft settings
+    config:
+      # Ensure controller quorum is local
+      controller.quorum.voters: "0@localhost:9093"
+      # Other Kafka configs...
+
+  # --- Entity Operator (topics/users) ---
   entityOperator:
     topicOperator: {}
     userOperator: {}
