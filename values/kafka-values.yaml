@@ -1,7 +1,7 @@
 # kafka-strimzi.yaml
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
-meta
+meta:
   name: my-cluster
   namespace: kafka
 spec:
