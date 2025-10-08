@@ -1,54 +1,27 @@
-# values/kafka-values.yaml
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
-  name: my-cluster
+  name: my-kafka-cluster
   namespace: kafka
 spec:
   kafka:
-    version: 4.1.0
+    version: 3.7.0 # or your desired Kafka version
     replicas: 1
-    processRoles:
-      - broker
-      - controller
-    resources:
-      requests:
-        memory: 2Gi
-        cpu: "1000m"
-      limits:
-        memory: 3Gi
-        cpu: "2000m"
-    readinessProbe:
-      initialDelaySeconds: 15
-      periodSeconds: 10
-      timeoutSeconds: 5
-    livenessProbe:
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      timeoutSeconds: 5
-    startupProbe:
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 30
     listeners:
       - name: plain
         port: 9092
         type: internal
         tls: false
-      - name: controller
-        port: 9093
-        type: internal
+      - name: external
+        port: 9094
+        type: nodeport # or loadbalancer if your minikube driver supports it
         tls: false
-        controller: true
     storage:
-      type: jbod
-      volumes:
-        - id: 0
-          type: ephemeral
-          size: 10Gi
-    config:
-      controller.quorum.voters: "0@localhost:9093"
+      type: ephemeral # or persistent-claim with appropriate PVC configuration
+  zookeeper:
+    replicas: 1
+    storage:
+      type: ephemeral
   entityOperator:
     topicOperator: {}
     userOperator: {}
