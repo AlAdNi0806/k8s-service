@@ -1,63 +1,40 @@
-# Kafka Helm Chart values.yaml for Minikube
-
-# ----------------------------------------------------------------------
-# GLOBAL SETTINGS (Unspecified)
-# Using defaults for Zookeeper, which the Kafka chart includes.
-# ----------------------------------------------------------------------
-
-# ----------------------------------------------------------------------
-# CRITERION: Настройка использования ресурсов пода на 60% (Resource Limits & Requests)
-# CRITERION: Настройка лимитов (Setting Limits)
-# Assuming 1 CPU core and 1.5Gi total memory are available for the pod.
-# We target 60% of 1 CPU (600m) and 60% of 1.5Gi (921Mi) for limits.
-# Requests are often set lower to allow bursting, but we'll set them close
-# to the limit to ensure QoS and resource availability.
-# ----------------------------------------------------------------------
-kafka:
-  resources:
-    limits:
-      cpu: "600m"
-      memory: "921Mi"
-    requests:
-      cpu: "500m"
-      memory: "750Mi"
-
-# ----------------------------------------------------------------------
-# CRITERION: Настройка Liveness, Readiness and Startup Probes
-# Bitnami charts include default probes, but we override them here
-# for specific Minikube/custom tuning.
-# ----------------------------------------------------------------------
-containerSecurityContext:
-  enabled: true # Ensure security context is enabled for proper probe function
-
-livenessProbe:
-  enabled: true
-  initialDelaySeconds: 30 # Time before first probe check
-  periodSeconds: 10 # How often to perform the probe
-  timeoutSeconds: 5 # Timeout for the probe command
-  failureThreshold: 5 # Number of consecutive failures to consider it "failed"
-
-readinessProbe:
-  enabled: true
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 5
-
-startupProbe:
-  enabled: true
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 15 # Allows more time for Kafka to start up completely
-
-# ----------------------------------------------------------------------
-# CRITERION: Настройка перезапуска при падении (Restart Policy)
-# This is controlled by the Kubernetes PodSpec template, not directly
-# by a top-level Helm value, but is often set in the deployment spec.
-# The default Kubernetes policy for Deployments is Always, which is what we need.
-# ----------------------------------------------------------------------
-podSecurityContext:
-  enabled: true
-# The 'restartPolicy' is implicitly set to Always by the Kafka Deployment resource
-# created by this chart, fulfilling the requirement for crash restarts.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    version: 3.7.0
+    replicas: 1 # you can increase it for more broker replica
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+      inter.broker.protocol.version: "3.7"
+    storage:
+      type: jbod
+      volumes:
+        - id: 0
+          type: persistent-claim
+          size: 100Gi
+          deleteClaim: false
+  zookeeper:
+    replicas: 1 # you can increase it for more ZK replica
+    storage:
+      type: persistent-claim
+      size: 100Gi
+      deleteClaim: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
