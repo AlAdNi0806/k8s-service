@@ -3,8 +3,11 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,7 +19,8 @@ import (
 	"order-service/internal/service"
 	"order-service/internal/utils"
 
-	"github.com/go-pg/pg/v10"
+	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 	"github.com/segmentio/kafka-go"
@@ -46,14 +50,18 @@ func main() {
 
 	utils.InitJWT(cfg.JWTSecret)
 
-	// PostgreSQL
-	pgOpts := pg.Options{
-		Addr:     cfg.DBHost + ":" + cfg.DBPort,
-		User:     cfg.DBUser,
-		Password: cfg.DBPassword,
-		Database: cfg.DBName,
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+	)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal("Failed to connect to DB:", err)
 	}
-	db := pg.Connect(&pgOpts)
 	defer db.Close()
 
 	// Kafka

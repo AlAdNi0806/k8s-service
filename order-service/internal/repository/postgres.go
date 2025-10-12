@@ -3,21 +3,44 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"order-service/internal/model"
-
-	"github.com/go-pg/pg/v10"
 )
 
 type OrderRepository struct {
-	db *pg.DB
+	db *sql.DB
 }
 
-func NewOrderRepository(db *pg.DB) *OrderRepository {
+func NewOrderRepository(db *sql.DB) *OrderRepository {
 	return &OrderRepository{db: db}
 }
 
 func (r *OrderRepository) Create(ctx context.Context, order *model.Order) error {
-	_, err := r.db.Model(order).Insert()
-	return err
+	// Insert the order and return the generated ID (MySQL syntax)
+	query := `
+		INSERT INTO orders (user_id, product_id, quantity, status, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`
+
+	result, err := r.db.ExecContext(ctx, query,
+		order.UserID,
+		order.ProductID,
+		order.Quantity,
+		order.Status,
+		time.Now(),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Get the last inserted ID for MySQL
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	order.ID = id
+
+	return nil
 }

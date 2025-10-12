@@ -1,0 +1,364 @@
+/cmd/main.go
+
+```go
+// cmd/main.go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"inventory-service/internal/config"
+	"inventory-service/internal/consumer"
+	"inventory-service/internal/repository"
+	"inventory-service/internal/service"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/labstack/echo/v4"
+	echomw "github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+)
+
+func newOTelProvider(ctx context.Context, endpoint string) (*sdktrace.TracerProvider, error) {
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("inventory-service"),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+	return tp, nil
+}
+
+func main() {
+	cfg := config.Load()
+
+	// PostgreSQL
+	pgOpts := pg.Options{
+		Addr:     cfg.DBHost + ":" + cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		Database: cfg.DBName,
+	}
+	db := pg.Connect(&pgOpts)
+	defer db.Close()
+
+	// OpenTelemetry
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tp, err := newOTelProvider(ctx, cfg.OtelExporterURL)
+	if err != nil {
+		log.Fatal("Failed to create OTel provider:", err)
+	}
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Fatal("Failed to shutdown OTel:", err)
+		}
+	}()
+
+	// Repository & Service
+	repo := repository.NewInventoryRepository(db)
+	invService := service.NewInventoryService(repo)
+
+	// Предзаполним склад для демо (в реальности — отдельный сервис каталога)
+	repo.EnsureStock(ctx, 123, 100) // product_id=123, qty=100
+
+	// Kafka Consumer
+	kafkaConsumer := consumer.NewKafkaConsumer(cfg.KafkaBrokers, cfg.KafkaGroupID, cfg.KafkaTopic, invService)
+
+	// Graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Запуск HTTP-сервера (для health-check и метрик)
+	e := echo.New()
+	e.Use(echomw.LoggerWithConfig(echomw.LoggerConfig{
+		Format: `{"time":"${time_rfc3339}", "method":"${method}", "uri":"${uri}", "status":${status}, "latency":"${latency_human}", "ip":"${remote_ip}"}` + "\n",
+	}))
+	e.Use(echomw.Recover())
+	e.Use(otelecho.Middleware("inventory-service"))
+
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(200, map[string]string{"status": "ok", "service": "inventory"})
+	})
+
+	// Запуск в горутинах
+	go func() {
+		if err := e.Start(":8083"); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
+	}()
+
+	go kafkaConsumer.Start(ctx)
+
+	log.Println("Inventory service started")
+
+	// Ожидание сигнала завершения
+	<-sigCh
+	log.Println("Shutting down...")
+
+	// Закрытие consumer
+	kafkaConsumer.Close()
+
+	// Закрытие HTTP сервера
+	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	e.Shutdown(ctxShutdown)
+}
+```
+
+/internal/config/config.go
+
+```go
+// internal/config/config.go
+package config
+
+import (
+	"os"
+	"strings"
+)
+
+type Config struct {
+	DBHost     string
+	DBPort     string
+	DBUser     string
+	DBPassword string
+	DBName     string
+
+	KafkaBrokers []string
+	KafkaGroupID string
+	KafkaTopic   string
+
+	OtelExporterURL string
+}
+
+func Load() *Config {
+	kafkaBrokers := []string{"localhost:9092"}
+	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
+		kafkaBrokers = []string{}
+		for _, b := range strings.Split(brokers, ",") {
+			kafkaBrokers = append(kafkaBrokers, strings.TrimSpace(b))
+		}
+	}
+
+	return &Config{
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBPort:     getEnv("DB_PORT", "5432"),
+		DBUser:     getEnv("DB_USER", "inventory_user"),
+		DBPassword: getEnv("DB_PASSWORD", "inventory_pass"),
+		DBName:     getEnv("DB_NAME", "inventory_db"),
+
+		KafkaBrokers: kafkaBrokers,
+		KafkaGroupID: getEnv("KAFKA_GROUP_ID", "inventory-group"),
+		KafkaTopic:   getEnv("KAFKA_TOPIC", "order.created"),
+
+		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+```
+
+/internal/consumer/kafka.go
+
+```go
+// internal/consumer/kafka.go
+package consumer
+
+import (
+	"context"
+	"log"
+
+	"inventory-service/internal/service"
+
+	"github.com/segmentio/kafka-go"
+)
+
+type KafkaConsumer struct {
+	reader *kafka.Reader
+	svc    *service.InventoryService
+}
+
+func NewKafkaConsumer(brokers []string, groupID, topic string, svc *service.InventoryService) *KafkaConsumer {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  brokers,
+		GroupID:  groupID,
+		Topic:    topic,
+		MinBytes: 10e3, // 10KB
+		MaxBytes: 10e6, // 10MB
+	})
+	return &KafkaConsumer{reader: reader, svc: svc}
+}
+
+func (c *KafkaConsumer) Start(ctx context.Context) {
+	log.Println("Starting Kafka consumer...")
+	for {
+		msg, err := c.reader.ReadMessage(ctx)
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			continue
+		}
+
+		if err := c.svc.HandleOrderEvent(ctx, msg.Value); err != nil {
+			log.Printf("Error handling message: %v", err)
+			// В продакшене: логика повтора или DLQ
+		} else {
+			log.Printf("Message processed: offset=%d", msg.Offset)
+		}
+	}
+}
+
+func (c *KafkaConsumer) Close() error {
+	return c.reader.Close()
+}
+```
+
+/internal/model/stock.go
+
+```go
+// internal/model/stock.go
+package model
+
+type Stock struct {
+	ProductID int64 `pg:"product_id,pk"`
+	Quantity  int   `pg:"quantity,notnull"`
+}
+```
+
+/internal/repository/postgres.go
+
+```go
+// internal/repository/postgres.go
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"inventory-service/internal/model"
+
+	"github.com/go-pg/pg/v10"
+)
+
+type InventoryRepository struct {
+	db *pg.DB
+}
+
+func NewInventoryRepository(db *pg.DB) *InventoryRepository {
+	return &InventoryRepository{db: db}
+}
+
+func (r *InventoryRepository) GetStock(ctx context.Context, productID int64) (*model.Stock, error) {
+	stock := &model.Stock{ProductID: productID}
+	err := r.db.Model(stock).Where("product_id = ?", productID).Select()
+	if err != nil {
+		if err == pg.ErrNoRows {
+			return nil, nil // товар ещё не заведён
+		}
+		return nil, err
+	}
+	return stock, nil
+}
+
+func (r *InventoryRepository) DeductStock(ctx context.Context, productID int64, quantity int) error {
+	// Используем UPDATE с проверкой, чтобы избежать отрицательных остатков
+	res, err := r.db.ExecContext(ctx, `
+        UPDATE stock
+        SET quantity = quantity - ?
+        WHERE product_id = ? AND quantity >= ?`,
+		quantity, productID, quantity)
+
+	if err != nil {
+		return err
+	}
+
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("insufficient stock for product %d", productID)
+	}
+
+	return nil
+}
+
+func (r *InventoryRepository) EnsureStock(ctx context.Context, productID int64, initialQty int) error {
+	_, err := r.db.ExecContext(ctx, `
+        INSERT INTO stock (product_id, quantity)
+        VALUES (?, ?)
+        ON CONFLICT (product_id) DO NOTHING`,
+		productID, initialQty)
+	return err
+}
+```
+
+/internal/service/inventory.go
+
+```go
+// internal/service/inventory.go
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+
+	"inventory-service/internal/repository"
+)
+
+type OrderEvent struct {
+	OrderID   int64 `json:"order_id"`
+	UserID    int64 `json:"user_id"`
+	ProductID int64 `json:"product_id"`
+	Quantity  int   `json:"quantity"`
+}
+
+type InventoryService struct {
+	repo *repository.InventoryRepository
+}
+
+func NewInventoryService(repo *repository.InventoryRepository) *InventoryService {
+	return &InventoryService{repo: repo}
+}
+
+func (s *InventoryService) HandleOrderEvent(ctx context.Context, msg []byte) error {
+	var event OrderEvent
+	if err := json.Unmarshal(msg, &event); err != nil {
+		return err
+	}
+
+	log.Printf("Processing order %d: product=%d, qty=%d", event.OrderID, event.ProductID, event.Quantity)
+
+	// Убедимся, что товар существует (для демо можно предварительно заполнить)
+	// В реальной системе — проверка наличия в каталоге
+
+	if err := s.repo.DeductStock(ctx, event.ProductID, event.Quantity); err != nil {
+		log.Printf("Failed to deduct stock: %v", err)
+		// В продакшене: отправить в DLQ или повторить
+		return err
+	}
+
+	log.Printf("Stock deducted for product %d", event.ProductID)
+	return nil
+}
+```
+

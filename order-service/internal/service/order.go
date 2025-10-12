@@ -4,7 +4,8 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"log"
+
+	"go.opentelemetry.io/otel/log"
 
 	"order-service/internal/model"
 	"order-service/internal/repository"
