@@ -39,7 +39,8 @@ kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz-otel-collector 4
 kubectl port-forward --address 0.0.0.0 -n default svc/my-signoz 8080:8080
 kubectl port-forward --address 0.0.0.0 -n default svc/my-redis-master 6379:6379
 kubectl port-forward --address 0.0.0.0 -n default svc/mariadb 3306:3306
-kubectl proxy --address=0.0.0.0 --port=41391 --accept-hosts='^.*$'
+kubectl port-forward --address 0.0.0.0 -n default svc/my-kafka-cluster-kafka-bootstrap 9092:9092
+kubectl proxy --address='0.0.0.0' --disable-filter=true
 
 0.
 kubectl port-forward --address 0.0.0.0 -n observability svc/my-signoz 8080:8080

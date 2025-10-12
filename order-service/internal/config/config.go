@@ -21,7 +21,7 @@ type Config struct {
 }
 
 func Load() *Config {
-	kafkaBrokers := []string{"localhost:9092"}
+	kafkaBrokers := []string{"192.168.0.176:9092"}
 	if brokers := os.Getenv("KAFKA_BROKERS"); brokers != "" {
 		kafkaBrokers = []string{}
 		for _, b := range strings.Split(brokers, ",") {
@@ -30,8 +30,8 @@ func Load() *Config {
 	}
 
 	return &Config{
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
+		DBHost:     getEnv("DB_HOST", "192.168.0.176"),
+		DBPort:     getEnv("DB_PORT", "3306"),
 		DBUser:     getEnv("DB_USER", "order_user"),
 		DBPassword: getEnv("DB_PASSWORD", "order_pass"),
 		DBName:     getEnv("DB_NAME", "order_db"),
@@ -40,7 +40,7 @@ func Load() *Config {
 
 		KafkaBrokers: kafkaBrokers,
 
-		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+		OtelExporterURL: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "192.168.0.176:4317"),
 	}
 }
 

@@ -3,9 +3,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"order-service/internal/config"
 	"order-service/internal/handler"
@@ -18,32 +21,29 @@ import (
 	echomw "github.com/labstack/echo/v4/middleware"
 	"github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
-func newOTelProvider(ctx context.Context, endpoint string) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("order-service"),
-		)),
-	)
-	otel.SetTracerProvider(tp)
-	return tp, nil
-}
+const serviceName = "order-service"
+const serviceVersion = "1.0.0"
 
 func main() {
+	// Setup OpenTelemetry SDK
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	cfg := config.Load()
+
+	otelShutdown, err := utils.SetupOTelSDK(ctx, serviceName, serviceVersion, cfg.OtelExporterURL)
+	if err != nil {
+		log.Fatalf("Error setting up OpenTelemetry SDK: %v", err)
+	}
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+		if err != nil {
+			log.Fatalf("Error shutting down OpenTelemetry: %v", err)
+		}
+	}()
+
 	utils.InitJWT(cfg.JWTSecret)
 
 	// PostgreSQL
@@ -70,29 +70,21 @@ func main() {
 	orderRepo := repository.NewOrderRepository(db)
 	orderService := service.NewOrderService(orderRepo, kafkaWriter)
 
-	// OpenTelemetry
-	ctx := context.Background()
-	tp, err := newOTelProvider(ctx, cfg.OtelExporterURL)
-	if err != nil {
-		log.Fatal("Failed to create OTel provider:", err)
-	}
-	defer func() {
-		if err := tp.Shutdown(ctx); err != nil {
-			log.Fatal("Failed to shutdown OTel:", err)
-		}
-	}()
-
 	// Echo
 	e := echo.New()
+
+	// OpenTelemetry Middleware
+	e.Use(otelecho.Middleware(serviceName,
+		otelecho.WithSkipper(func(c echo.Context) bool {
+			return c.Path() == "/health"
+		}),
+	))
 
 	// Custom logger with IP
 	e.Use(echomw.LoggerWithConfig(echomw.LoggerConfig{
 		Format: `{"time":"${time_rfc3339}", "method":"${method}", "uri":"${uri}", "status":${status}, "latency":"${latency_human}", "ip":"${remote_ip}"}` + "\n",
 	}))
 	e.Use(echomw.Recover())
-
-	// OpenTelemetry
-	e.Use(otelecho.Middleware("order-service"))
 
 	// Auth middleware
 	authMid := func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -129,5 +121,20 @@ func main() {
 	}
 
 	log.Printf("Order service starting on %s", addr)
-	log.Fatal(e.Start(addr))
+
+	// Graceful shutdown
+	if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		log.Fatal("Echo server Shutdown error:", err)
+	}
+	log.Println("Echo server shut down.")
 }

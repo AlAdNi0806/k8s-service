@@ -30,6 +30,8 @@ func NewOrderService(orderRepo *repository.OrderRepository, kafkaWriter *kafka.W
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, userID, productID int64, quantity int) error {
+	logger := utils.NewHelperLogger("order-service.service.create-order")
+
 	order := &model.Order{
 		UserID:    userID,
 		ProductID: productID,
@@ -38,6 +40,10 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID, productID int64,
 	}
 
 	if err := s.orderRepo.Create(ctx, order); err != nil {
+		logger.LogError(ctx, "Failed to create order in database", err,
+			log.KeyValue{Key: "user_id", Value: log.Int64Value(userID)},
+			log.KeyValue{Key: "product_id", Value: log.Int64Value(productID)},
+		)
 		return err
 	}
 
@@ -55,8 +61,14 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID, productID int64,
 		Value: payload,
 	})
 	if err != nil {
-		log.Printf("Failed to publish to Kafka: %v", err)
+		logger.LogError(ctx, "Failed to publish to Kafka", err,
+			log.KeyValue{Key: "order_id", Value: log.Int64Value(order.ID)},
+		)
 		// Можно добавить retry или dead-letter queue в продакшене
+	} else {
+		logger.LogInfo(ctx, "Order created and published to Kafka",
+			log.KeyValue{Key: "order_id", Value: log.Int64Value(order.ID)},
+		)
 	}
 
 	return nil
